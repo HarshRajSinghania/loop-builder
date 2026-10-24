@@ -39,7 +39,8 @@ def test_qr_slide_decodes(tmp_path):
     event_file = tmp_path / "qr.yaml"
     event_file.write_text(
         "event: QR test\nloops:\n  - name: QR\n    slides:\n"
-        "      - qr: {url: 'https://example.com/program', heading: [MEET, PROGRAM]}\n"
+        "      - qr: {url: 'https://example.com/program', heading: [MEET, PROGRAM]}\n",
+        encoding="utf-8",
     )
     event = load_event(event_file)
     img = render_slide(event, event.loops[0], 0).resize((960, 528), Image.Resampling.NEAREST)
@@ -70,7 +71,8 @@ def test_png_export_skips_moving_slides(tmp_path):
     event_file.write_text(
         "event: PNG test\nloops:\n  - name: Mixed\n    slides:\n"
         "      - countdown: {label: WARM-UP, length: '0:05'}\n"
-        "      - card: {layout: stack, lines: [{text: DIVING, size: L}]}\n"
+        "      - card: {layout: stack, lines: [{text: DIVING, size: L}]}\n",
+        encoding="utf-8",
     )
     event = load_event(event_file)
     (png,), skipped = export_pngs(event, event.loops[0], tmp_path / "out")
@@ -87,7 +89,8 @@ def test_switching_layouts_never_breaks_a_card(tmp_path):
         + "".join(
             f"      - card: {{layout: {lay}, picture: none, lines: {lines}}}\n"
             for lay in ("stack", "logo-center", "text-qr", "banner")
-        )
+        ),
+        encoding="utf-8",
     )
     event = load_event(event_file)
     for i in range(4):
@@ -104,7 +107,8 @@ def test_text_qr_can_show_its_link_and_warns_when_it_is_too_long(tmp_path):
     event_file.write_text(
         "event: Link\nloops:\n  - name: L\n    slides:\n"
         "      - card: {layout: text-qr, qr: 'https://example.org', show_url: true, lines: [{text: DONATE, size: L}]}\n"
-        f"      - card: {{layout: text-qr, qr: '{long}', show_url: true, lines: [{{text: DONATE, size: L}}]}}\n"
+        f"      - card: {{layout: text-qr, qr: '{long}', show_url: true, lines: [{{text: DONATE, size: L}}]}}\n",
+        encoding="utf-8",
     )
     event = load_event(event_file)
     found = [(i.slide, i.level, i.message) for i in run_checks(event)]
@@ -116,7 +120,8 @@ def test_crawl_separator_uses_the_chosen_theme_colour(tmp_path):
     event_file = tmp_path / "sep.yaml"
     event_file.write_text(
         "event: Sep\nloops:\n  - name: L\n    slides:\n"
-        "      - crawl: {length: '0:20', separator: '■', separator_color: accent, segments: [{text: 'GO '}]}\n"
+        "      - crawl: {length: '0:20', separator: '■', separator_color: accent, segments: [{text: 'GO '}]}\n",
+        encoding="utf-8",
     )
     event = load_event(event_file)
     accent = (0xF0, 0xC8, 0x78)
@@ -138,7 +143,8 @@ def test_a_template_is_found_by_name_under_a_parent_folder(tmp_path):
     tpl_file.write_bytes(b"x")
     event_file = tmp_path / "e.yaml"
     event_file.write_text(
-        f"event: T\ntemplates: {tmp_path / 'Library'}\nloops:\n  - name: L\n    slides: [card: {{}}]\n"
+        f"event: T\ntemplates: {tmp_path / 'Library'}\nloops:\n  - name: L\n    slides: [card: {{}}]\n",
+        encoding="utf-8",
     )
     event = load_event(event_file)
     assert event.template("Welcome.tpl") == tpl_file  # one level down, found by name
@@ -153,7 +159,8 @@ def test_fit_can_show_any_shaped_part_of_a_picture(tmp_path):
     event_file.write_text(
         "event: T\nloops:\n  - name: L\n    slides:\n"
         "      - image: {file: pic.png, fit: fit, crop: [0, 0, 0.5, 1]}\n"  # a tall strip: the blue half
-        "      - image: {file: pic.png, fit: fit, crop: [0, 0, 0.05, 0.05]}\n"  # tiny: blocky
+        "      - image: {file: pic.png, fit: fit, crop: [0, 0, 0.05, 0.05]}\n",  # tiny: blocky
+        encoding="utf-8",
     )
     event = load_event(event_file)
     img = render_slide(event, event.loops[0], 0).convert("RGB")
@@ -172,7 +179,8 @@ def test_pan_follows_the_arrow_in_fill_and_fit(tmp_path):
     event_file.write_text(
         "event: T\nloops:\n  - name: L\n    hold: 4\n    slides:\n"
         "      - image: {file: pic.png, zoom: 3, focus: [0.1, 0.5], pan: {to: [0.9, 0.5]}}\n"
-        "      - image: {file: pic.png, fit: fit, crop: [0, 0.2, 0.2, 0.8], pan: {to: [0.9, 0.5]}}\n"
+        "      - image: {file: pic.png, fit: fit, crop: [0, 0.2, 0.2, 0.8], pan: {to: [0.9, 0.5]}}\n",
+        encoding="utf-8",
     )
     event = load_event(event_file)
     for n in (0, 1):
@@ -226,7 +234,8 @@ def test_lanes_slide_draws_every_lane_and_flags_a_missing_logo(tmp_path):
     event_file.write_text(
         "event: L\nloops:\n  - name: L\n    slides:\n"
         "      - lanes: {title: Welcome!, count: 10, first: 0, lanes: [{name: PINE RIDGE, logo: pine-ridge.png}, {name: 'NORTH|HARBOR'}]}\n"
-        "      - lanes: {count: 4, lanes: [{name: PARK, logo: missing.png}]}\n"
+        "      - lanes: {count: 4, lanes: [{name: PARK, logo: missing.png}]}\n",
+        encoding="utf-8",
     )
     event = load_event(event_file)
     img = render_slide(event, event.loops[0], 0).convert("RGB")
@@ -242,7 +251,8 @@ def test_lanes_split_into_pages_and_loops_with_a_countdown_end_cleanly(tmp_path)
         "event: P\nloops:\n  - name: Welcome\n    hold: 2\n    fade: 0\n    repeat: false\n    slides:\n"
         "      - lanes: {title: Hi, first: 1, last: 8, per_page: 4, lanes: [{name: ONE}, {}, {}, {}, {name: FIVE}]}\n"
         "      - card: {lines: [{text: HELLO}]}\n"
-        "  - name: Warm-up\n    slides:\n      - countdown: {length: '0:02'}\n      - card: {lines: [{text: BACK}]}\n"
+        "  - name: Warm-up\n    slides:\n      - countdown: {length: '0:02'}\n      - card: {lines: [{text: BACK}]}\n",
+        encoding="utf-8",
     )
     event = load_event(event_file)
     welcome, warmup = event.loops

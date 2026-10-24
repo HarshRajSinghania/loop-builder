@@ -71,11 +71,18 @@ def trim_white(img, threshold=235):
     return img.crop(box) if box else img
 
 
+def open_picture(path):
+    """A picture read fully and its file closed (Windows can't delete or replace a file that's still open), shrunk."""
+    with Image.open(path) as img:
+        img.load()
+        return shrink(img)
+
+
 def prepare_logo(src, out, trim=True, long_side=512):
     """A team logo for lane slides: upright, at most `long_side` px, optionally trimmed of a white page, saved
     as PNG (it needs its transparency)."""
     try:
-        img = shrink(Image.open(src))
+        img = open_picture(src)
     except OSError as exc:
         raise UploadError(f"{Path(src).name} isn't a picture Loop Builder can read") from exc
     img = img.convert("RGBA")
@@ -92,7 +99,7 @@ def prepare_upload(src, out_dir):
     """Shrink and re-encode one picked file into out_dir; returns the working copy's path."""
     src = Path(src)
     try:
-        img = shrink(Image.open(src))
+        img = open_picture(src)
     except OSError as exc:
         raise UploadError(f"{src.name} isn't a picture Loop Builder can read") from exc
     data, ext = encode(img)

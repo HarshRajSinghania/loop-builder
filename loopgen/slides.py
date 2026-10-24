@@ -32,6 +32,8 @@ def lane_range(p):
     last = max(first, min(last, MAX_LANES, first + MAX_LANES - 1))
     per_page = int(p.get("per_page") or 0) or last - first + 1
     return first, last, max(1, min(per_page, last - first + 1))
+
+
 BANNER_LINES = 2  # a banner is one big line and one small one
 CRAWL_SPEED = {"slow": 2, "medium": 3, "fast": 4}  # board px per frame at 30 fps
 
@@ -85,7 +87,7 @@ class Renderer:
         p = self.event.resolve(value)
         if not p.exists():
             raise MissingAsset(f"{what} not found: {value}")
-        return uploads.shrink(Image.open(p))  # same pixels as a picture added in the app
+        return uploads.open_picture(p)  # same pixels as a picture added in the app
 
     def picture(self, value):
         if value in (None, "none", False):
@@ -200,8 +202,13 @@ class Renderer:
         lanes = list(p.get("lanes") or [])
         first, last, per_page = lane_range(p)
         pages = [
-            self._lanes_page(p, [(num, lanes[num - first] if num - first < len(lanes) else {})
-                                 for num in range(start, min(start + per_page, last + 1))])
+            self._lanes_page(
+                p,
+                [
+                    (num, lanes[num - first] if num - first < len(lanes) else {})
+                    for num in range(start, min(start + per_page, last + 1))
+                ],
+            )
             for start in range(first, last + 1, per_page)
         ]
         if len(pages) == 1:

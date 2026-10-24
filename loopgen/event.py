@@ -102,7 +102,7 @@ def _slide(item, where):
 def load_event(path, templates=None):
     """Read an event file; `templates` (the DisplayLink Plus template folder setting) overrides the file's own."""
     path = Path(path).expanduser().resolve()
-    data = yaml.safe_load(path.read_text())
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
     if not isinstance(data, dict) or "loops" not in data:
         raise EventError(f"{path}: an event file needs 'loops'")
     board = data.get("board") or {}
@@ -110,7 +110,11 @@ def load_event(path, templates=None):
     panels = {}
     if PANELS_FILE.exists():
         panels.update(
-            {k: v["panel"] for k, v in (yaml.safe_load(PANELS_FILE.read_text()) or {}).items() if "panel" in v}
+            {
+                k: v["panel"]
+                for k, v in (yaml.safe_load(PANELS_FILE.read_text(encoding="utf-8")) or {}).items()
+                if "panel" in v
+            }
         )
     panels.update({k: v["panel"] for k, v in (data.get("template_panels") or {}).items()})
     templates = Path(str(templates or data.get("templates", "templates"))).expanduser()

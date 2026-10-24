@@ -59,8 +59,9 @@ def test_team_library_trims_logos_and_copies_them_into_events(lib, tmp_path):
     logo.paste((0, 80, 200), (100, 75, 300, 225))  # a blue badge on a white page
     logo.save(tmp_path / "pine-ridge.jpg")
     team_id = lib.add_team("Pine Ridge", tmp_path / "pine-ridge.jpg", trim=True)
-    stored = Image.open(lib.teams_dir / f"{team_id}.png")
-    assert stored.mode == "RGBA" and 200 <= stored.width <= 212 and 150 <= stored.height <= 162  # page gone (JPEG
+    with Image.open(lib.teams_dir / f"{team_id}.png") as stored:
+        size, mode = stored.size, stored.mode
+    assert mode == "RGBA" and 200 <= size[0] <= 212 and 150 <= size[1] <= 162  # page gone (JPEG
     # noise at the badge's edge keeps a few px)
     slug = lib.create("Sections", "sections")
     used = lib.use_team(team_id, lib.event_file(slug).parent)
