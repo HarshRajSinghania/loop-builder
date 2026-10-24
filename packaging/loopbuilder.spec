@@ -50,7 +50,7 @@ exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="Loop Builder", consol
           icon=str(ROOT / "packaging" / "icons" / ("loop-builder.ico" if sys.platform == "win32" else "loop-builder.icns")))
 coll = COLLECT(exe, a.binaries, a.datas, name="Loop Builder")
 if sys.platform == "darwin":
-    app = BUNDLE(coll, name="Loop Builder.app", bundle_identifier="org.loopbuilder.LoopBuilder",
+    app = BUNDLE(coll, name="Loop Builder.app", bundle_identifier="io.github.mhuot.loopbuilder",
                  icon=str(ROOT / "packaging" / "icons" / "loop-builder.icns"),
                  info_plist={"NSHighResolutionCapable": True, "CFBundleShortVersionString": VERSION,
                              "CFBundleVersion": VERSION})
