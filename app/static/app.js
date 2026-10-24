@@ -49,6 +49,7 @@ function defaultSlide(type) {
 
 async function loadEvent(keepEditor = false) {
   state.event = await api("/api/event");
+  if (state.templatesFor !== templatesKey()) await loadTemplates(); // the folder changed, or went missing or came back
   $("#event-name").replaceChildren(el("a", { href: "/" }, "Events"), " / ", `${state.event.name}${state.event.date ? " · " + state.event.date : ""}`);
   renderTabs();
   renderLoop();
@@ -111,7 +112,11 @@ async function saveLoop(slides, select) {
 async function insertSlide(type, at) {
   let raw = defaultSlide(type);
   if (type === "image") raw = await pickPicture((file) => ({ image: { file } }));
-  if (type === "board") { const name = await pickTemplate(); raw = name ? { board: { template: name } } : null; }
+  if (type === "board") {
+    if (!staticTemplates().length) await setTemplateFolder(folderProblem());
+    const name = staticTemplates().length ? await pickTemplate() : null;
+    raw = name ? { board: { template: name } } : null;
+  }
   if (!raw) return;
   const slides = rawSlides();
   slides.splice(at, 0, raw);
@@ -285,8 +290,25 @@ const holdField = () => text("Hold (s, empty = loop default)", P().hold, (v) => 
   setupScrub({ type: kindOf(state.draft), raw: state.draft }, true); // the "Preview at" timeline follows the new length
   document.dispatchEvent(new Event("holdchange")); // and so does a pan playing in "On the board"
 }, { type: "number", min: "1", step: "0.5", placeholder: String(currentLoop().hold) });
+async function loadTemplates() {
+  const found = await api("/api/templates");
+  state.templates = found.templates;
+  state.templateDetails = found.details || [];
+  state.templatesFor = templatesKey();
+}
+const templatesKey = () => `${state.event.templates_folder}|${state.event.templates_found}`;
 const staticTemplates = () => state.templateDetails.filter((t) => !t.live && !t.broken).map((t) => t.name);
 const templateUrl = (name) => `/api/template.png?name=${encodeURIComponent(name)}`;
+
+// Why this event has no board templates to pick from, or "" when it has some.
+function folderProblem() {
+  const ev = state.event;
+  if (!ev.templates_set) return "This event has no DisplayLink Plus template folder yet, so there are no board templates to choose from.";
+  if (!ev.templates_found) return `The DisplayLink Plus template folder ${ev.templates_folder} isn't on this computer. Choose where the templates are here.`;
+  if (!state.templateDetails.length) return `There are no DisplayLink Plus templates (.tpl) in ${ev.templates_folder}.`;
+  if (!staticTemplates().length) return `None of the templates in ${ev.templates_folder} can go in a video: they show live meet data or can't be drawn.`;
+  return "";
+}
 
 // Where this event's board templates come from, with a way to change it (for the whole event).
 function folderStatus(value) {
@@ -294,34 +316,32 @@ function folderStatus(value) {
   const name = value ? value.split("/").pop() : "";
   const missing = value && value !== "blank" && !state.templates.some((t) => t === value || t.split("/").pop() === name);
   const where = ev.templates_source === "event" ? "this event's folder" : ev.templates_source === "override" ? "set at launch" : "the default for new events";
-  const problem = !ev.templates_found ? "This event has no DisplayLink Plus template folder yet, so board templates can't be drawn."
-    : missing ? `“${value.replace(/\.tpl$/, "")}” isn't in the DisplayLink Plus template folder.` : "";
+  const problem = folderProblem() || (missing ? `“${value.replace(/\.tpl$/, "")}” isn't in the DisplayLink Plus template folder.` : "");
   return el("div", { class: problem ? "folder-status warn-box" : "folder-status" },
     problem && el("p", { class: "warn" }, problem),
     el("p", { class: "muted" }, ev.templates_found ? `Templates from ${ev.templates_folder} (${where}).` : ""),
-    el("button", { class: problem ? "btn btn-primary" : "btn", type: "button", on: { click: setTemplateFolder } },
+    el("button", { class: problem ? "btn btn-primary" : "btn", type: "button", on: { click: () => setTemplateFolder() } },
       "Set DisplayLink Plus template folder…"));
 }
 
-async function setTemplateFolder() {
+function setTemplateFolder(why = "") {
   const dialog = $("#folder-dialog");
   $("#folder-path").value = state.event.templates_found ? state.event.templates_folder : "";
-  $("#folder-status").textContent = "";
+  $("#folder-status").textContent = why;
   $("#folder-default").checked = state.event.templates_source !== "event";
   dialog.showModal();
+  return new Promise((resolve) => dialog.addEventListener("close", resolve, { once: true }));
 }
 $("#folder-pick").addEventListener("click", () => pickFolder($("#folder-path")));
 $("#folder-save").addEventListener("click", async () => {
   try {
     const { templates } = await api("/api/event/templates", "PUT", { folder: $("#folder-path").value.trim(), make_default: $("#folder-default").checked });
-    $("#folder-dialog").close();
-    const found = await api("/api/templates");
-    state.templates = found.templates;
-    state.templateDetails = found.details || [];
+    state.templatesFor = null; // the same folder may hold new templates
     state.stamp = Date.now();
     await loadEvent(true);
     renderEditor();
     draw(slideUrl(state.loop, state.n, 3));
+    $("#folder-dialog").close();
     flash(`Folder set · ${templates} templates`);
   } catch (err) { $("#folder-status").textContent = err.message; }
 });
@@ -336,7 +356,7 @@ const templateSelect = (label, value, onPick, allowBlank) => {
         on: { error: (e) => e.target.replaceWith(el("span", { class: "tpl-blank" }, "Not found")) } }),
     el("span", { class: "tpl-name" }, blank ? "" : value.replace(/\.tpl$/, ""),
       live && el("small", { class: "warn", style: "display:block" }, `Has live data (${live.about}): pick another`)),
-    el("button", { class: "btn", type: "button", disabled: !state.templates.length, on: { click: async () => {
+    el("button", { class: "btn", type: "button", disabled: !staticTemplates().length, on: { click: async () => {
       const picked = await pickTemplate({ allowBlank, current: value });
       if (picked !== null) onPick(picked);
     } } }, "Choose template…")), folderStatus(blank ? "" : value));
@@ -1013,8 +1033,5 @@ $("#copy-go").addEventListener("click", async () => {
 (async () => {
   state.settings = (await api("/api/home")).settings;
   state.teams = await api("/api/teams");
-  const found = await api("/api/templates");
-  state.templates = found.templates;
-  state.templateDetails = found.details || [];
   await loadEvent();
 })();
