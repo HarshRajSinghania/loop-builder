@@ -1,5 +1,6 @@
 # Build Loop Builder for Mac and Windows. Tags like v0.1.0 also publish a GitHub Release.
-# Signing is optional: it runs only when the named secrets exist in the repository settings.
+# Signing is optional. Mac: runs when the MAC_*/APPLE_* secrets exist. Windows: runs when the release environment
+# has the AZURE_* variables (Artifact Signing, signed in through GitHub's OIDC token: no stored secret).
 name: build
 
 on:
@@ -9,6 +10,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write  # lets the Windows build sign in to Azure for Artifact Signing
 
 jobs:
   build:
@@ -17,8 +19,10 @@ jobs:
       matrix:
         os: [macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    environment: release  # holds the Windows signing settings; allowed for v* tags and main
     env:
       HAS_MAC_CERT: ${{ secrets.MAC_CERT_P12 != '' }}
+      HAS_WIN_SIGN: ${{ vars.AZURE_CLIENT_ID != '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -74,24 +78,61 @@ jobs:
         shell: pwsh
         run: Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/p/?LinkId=2124703" -OutFile packaging/windows/MicrosoftEdgeWebview2Setup.exe
 
+      - name: Sign in to Azure (Windows)
+        if: runner.os == 'Windows' && env.HAS_WIN_SIGN == 'true'
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Sign the app (Windows)
+        if: runner.os == 'Windows' && env.HAS_WIN_SIGN == 'true'
+        uses: azure/artifact-signing-action@v2
+        with:
+          endpoint: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.AZURE_CERT_PROFILE }}
+          files: ${{ github.workspace }}\dist\Loop Builder\Loop Builder.exe
+          description: Loop Builder
+          description-url: https://github.com/mhuot/loop-builder
+
       - name: Make the installer (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        env:
-          WINDOWS_SIGN_COMMAND: ${{ secrets.WINDOWS_SIGN_COMMAND }}
         run: |
           $version = (python packaging/version.py).Trim()
           $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
           if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress; $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" }
-          $isccArgs = @("/DAppVersion=$version", "/DDistDir=$PWD\dist", "/DOutDir=$PWD\out")
-          if ($env:WINDOWS_SIGN_COMMAND) { $isccArgs += @("/DSign", "/Ssigntool=$env:WINDOWS_SIGN_COMMAND") }
-          & $iscc @isccArgs packaging\windows\loopbuilder.iss
+          & $iscc "/DAppVersion=$version" "/DDistDir=$PWD\dist" "/DOutDir=$PWD\out" packaging\windows\loopbuilder.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Sign the installer (Windows)
+        if: runner.os == 'Windows' && env.HAS_WIN_SIGN == 'true'
+        uses: azure/artifact-signing-action@v2
+        with:
+          endpoint: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.AZURE_CERT_PROFILE }}
+          files-folder: ${{ github.workspace }}\out
+          files-folder-filter: exe
+          description: Loop Builder installer
+          description-url: https://github.com/mhuot/loop-builder
 
       - name: Make the portable zip (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: packaging/windows/make_portable.ps1 -Dist dist -Out out
+
+      - name: Check the signatures (Windows)
+        if: runner.os == 'Windows' && env.HAS_WIN_SIGN == 'true'
+        shell: pwsh
+        run: |
+          foreach ($f in @("dist\Loop Builder\Loop Builder.exe") + (Get-ChildItem out\*.exe).FullName) {
+            $sig = Get-AuthenticodeSignature $f
+            "{0}: {1} ({2})" -f (Split-Path $f -Leaf), $sig.Status, $sig.SignerCertificate.Subject
+            if ($sig.Status -ne "Valid") { exit 1 }
+          }
 
       - uses: actions/upload-artifact@v4
         with:
