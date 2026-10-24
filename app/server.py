@@ -344,7 +344,7 @@ def create_app(event_path=None, templates=None, library=None):
 
     @app.delete("/api/teams/{team_id}")
     def delete_team(team_id: str):
-        lib.delete_team(team_id)
+        library_call(lib.delete_team, team_id)
         return {"ok": True}
 
     @app.get("/api/teams/{team_id}/logo")
@@ -352,7 +352,7 @@ def create_app(event_path=None, templates=None, library=None):
         team = next((t for t in lib.teams() if t["id"] == team_id), None)
         if team is None:
             raise HTTPException(404, "no such team")
-        return FileResponse(lib.teams_dir / team["logo"], headers={"Cache-Control": "no-store"})
+        return FileResponse(lib.team_logo_path(team), headers={"Cache-Control": "no-store"})
 
     @app.post("/api/teams/{team_id}/use")
     def use_team(team_id: str):
@@ -478,6 +478,7 @@ def create_app(event_path=None, templates=None, library=None):
         return {
             "theme": s.data.get("theme") or {},
             "team_look": matches_team_look(s.data.get("theme") or {}, s.path.parent),
+            "own_theme": bool(s.data.get("own_theme")),  # chosen on purpose, so the editor doesn't offer the team theme
             "panels": s.event.panels,
             "templates_folder": str(s.event.templates),
             "templates_found": s.event.templates.is_dir(),
@@ -597,7 +598,14 @@ def create_app(event_path=None, templates=None, library=None):
     def save_theme(body: ThemeBody):
         colours = look_colours(body.theme)
         with s.lock:
-            s.change(lambda d: d.__setitem__("theme", {**(d.get("theme") or {}), **colours}))
+            s.change(lambda d: d.update(theme={**(d.get("theme") or {}), **colours}, own_theme=True))
+        return {"ok": True}
+
+    @app.post("/api/theme/keep")
+    def keep_theme():
+        """Keep the open event's theme though it differs from the team theme (undoable)."""
+        with s.lock:
+            s.change(lambda d: d.__setitem__("own_theme", True))
         return {"ok": True}
 
     @app.post("/api/theme/reset")
@@ -610,6 +618,7 @@ def create_app(event_path=None, templates=None, library=None):
             if logo:
                 theme["logo"] = logo
             d["theme"] = theme
+            d.pop("own_theme", None)
 
         with s.lock:
             s.change(edit)

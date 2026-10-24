@@ -87,6 +87,7 @@ select.field{padding-right:8px}
 .between{justify-content:space-between}.grow{flex:1 1 260px}
 .setup{background:#12202E;border:1px solid #23476E;border-radius:12px;padding:18px 20px;display:flex;flex-direction:column;gap:10px}
 .setup p{margin:0;color:#B9D6F7}
+.offer{margin:12px 24px 0;flex-direction:row;align-items:center;justify-content:space-between;flex-wrap:wrap}
 .starters{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}
 .starter{display:flex;flex-direction:column;gap:6px;text-align:left;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;color:var(--text);font:inherit;font-weight:600;cursor:pointer}
 .starter small{font-weight:400;font-size:13px;color:var(--muted);line-height:1.4}

@@ -54,6 +54,7 @@ async function loadEvent(keepEditor = false) {
   renderLoop();
   $("#undo").disabled = !state.event.can_undo;
   $("#redo").disabled = !state.event.can_redo;
+  $("#theme-offer").hidden = state.event.team_look || state.event.own_theme;
   if (!keepEditor) selectSlide(Math.min(state.n, currentLoop().slides.length - 1));
   else markCurrent();
   loadChecks();
@@ -755,7 +756,10 @@ async function manageTeams() {
   const dialog = $("#teams-dialog");
   const render = async () => {
     state.teams = await api("/api/teams");
-    $("#teams-list").replaceChildren(...(state.teams.length ? state.teams.map((t) => el("li", {},
+    $("#teams-list").replaceChildren(...(state.teams.length ? state.teams.map((t) => t.home ? el("li", {},
+      el("img", { src: teamLogo(t.id), alt: "", class: "lane-logo" }),
+      el("span", { class: "grow" }, t.name), el("span", { class: "muted" }, "Your team: its name and logo are in Settings"))
+    : el("li", {},
       el("img", { src: teamLogo(t.id), alt: "", class: "lane-logo" }),
       el("input", { class: "field grow", value: t.name, "aria-label": `Name for ${t.name}`,
         on: { change: async (e) => { await api(`/api/teams/${encodeURIComponent(t.id)}`, "PUT", { name: e.target.value }); } } }),
@@ -948,7 +952,7 @@ document.addEventListener("keydown", (e) => {
   stepHistory(e.shiftKey ? "redo" : "undo");
 });
 
-// This event's theme: its colours, or the team theme again ("Reset to team theme"), which lives in Settings.
+// This event's theme: its colours, or the team theme again ("Use team theme"), which lives in Settings.
 const showLook = () => {
   const theme = state.event.theme || {};
   $("#theme-colours").replaceChildren(...COLOURS.map(([k, name, hint]) => el("label", { class: "swatch-field" },
@@ -965,13 +969,36 @@ $("#open-theme").addEventListener("click", () => {
   $("#theme-status").textContent = "";
   $("#theme").showModal();
 });
-$("#theme-reset").addEventListener("click", async () => {
-  try { await api("/api/theme/reset", "POST"); }
-  catch (err) { $("#theme-status").textContent = err.message; return; }
+async function useTeamTheme() {
+  await api("/api/theme/reset", "POST");
   state.stamp = Date.now();
   await loadEvent();
-  showLook();
   flash("Team theme restored");
+}
+$("#theme-reset").addEventListener("click", async () => {
+  try { await useTeamTheme(); } catch (err) { $("#theme-status").textContent = err.message; return; }
+  showLook();
+});
+// An event that differs from the team theme offers it, until it's used or this event's own theme is kept.
+$("#offer-use").addEventListener("click", () => useTeamTheme().catch((err) => flash(err.message)));
+$("#offer-keep").addEventListener("click", async () => {
+  try { await api("/api/theme/keep", "POST"); } catch (err) { flash(err.message); return; }
+  await loadEvent(true);
+  flash("Keeping this event's theme");
+});
+
+// Settings from the editor. A new team logo is kept as soon as it's picked, so refresh on any close; a team
+// theme changed here is offered to this event even if it kept its own before.
+$("#open-settings").addEventListener("click", () => openSettings(() => flash("Settings saved")));
+$("#settings").addEventListener("close", async () => {
+  const found = await api("/api/templates");
+  state.templates = found.templates;
+  state.templateDetails = found.details || [];
+  state.teams = await api("/api/teams");
+  state.stamp = Date.now();
+  await loadEvent(true);
+  renderEditor();
+  if (teamLookChanged && !state.event.team_look) $("#theme-offer").hidden = false;
 });
 $("#theme-save").addEventListener("click", async () => {
   const theme = Object.fromEntries(COLOURS.map(([k]) => [k, $(`#colour-${k}`).value.toUpperCase()]));

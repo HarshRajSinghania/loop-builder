@@ -73,6 +73,26 @@ def test_team_library_trims_logos_and_copies_them_into_events(lib, tmp_path):
     assert lib.teams() == []
 
 
+def test_home_team_from_settings_leads_the_team_list(lib, tmp_path):
+    from PIL import Image  # pylint: disable=import-outside-toplevel
+
+    Image.new("RGBA", (60, 40), (0, 80, 200, 255)).save(tmp_path / "otters.png")
+    lib.update_settings(team="Riverside Otters")
+    assert lib.teams() == []  # a name without a logo isn't a team on the board yet
+    lib.set_logo(tmp_path / "otters.png")
+    lib.add_team("Lakeview", tmp_path / "otters.png", trim=False)
+    home, added = lib.teams()
+    assert home["home"] and home["name"] == "Riverside Otters" and added["name"] == "Lakeview"
+    slug = lib.create("Dual", "dual-meet")
+    used = lib.use_team(home["id"], lib.event_file(slug).parent)
+    assert (lib.event_file(slug).parent / used["logo"]).exists() and used["name"] == "Riverside Otters"
+    lib.rename_team(home["id"], "Someone else")  # its name lives in Settings
+    with pytest.raises(LibraryError):
+        lib.delete_team(home["id"])
+    assert [t["name"] for t in lib.teams()] == ["Riverside Otters", "Lakeview"]
+    assert lib.settings()["team"] == "Riverside Otters"
+
+
 def test_pool_lanes_are_team_settings(lib):
     assert lib.settings()["pool_lanes"] == 8 and lib.settings()["first_lane"] == 1
     lib.update_settings(pool_lanes=10, first_lane=0)

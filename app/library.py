@@ -200,12 +200,22 @@ class Library:
     def teams_dir(self):
         return self.team_dir / "Teams"
 
+    HOME_TEAM = "_home"  # the team from Settings; an added team's id never starts with "_"
+
     def teams(self):
+        """The home team (Settings: team name and logo, when both are set) first, then the added teams."""
         try:
             found = json.loads((self.teams_dir / "teams.json").read_text(encoding="utf-8"))
         except (FileNotFoundError, json.JSONDecodeError):
-            return []
-        return [t for t in found if (self.teams_dir / t["logo"]).exists()]
+            found = []
+        added = [t for t in found if (self.teams_dir / t["logo"]).exists()]
+        name, logo = (self.settings().get("team") or "").strip(), self.team_logo()
+        home = [{"id": self.HOME_TEAM, "name": name, "logo": logo.name, "home": True}] if name and logo else []
+        return home + added
+
+    def team_logo_path(self, team):
+        """The file of a team's logo: the home team's is the Settings logo."""
+        return self.team_logo() if team.get("home") else self.teams_dir / team["logo"]
 
     def _save_teams(self, teams):
         self.teams_dir.mkdir(parents=True, exist_ok=True)
@@ -218,20 +228,22 @@ class Library:
             raise LibraryError("a team needs a name")
         team_id = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or "team"
         prepare_logo(picture, self.teams_dir / f"{team_id}.png", trim)
-        teams = [t for t in self.teams() if t["id"] != team_id]
+        teams = [t for t in self.teams() if t["id"] != team_id and not t.get("home")]
         teams.append({"id": team_id, "name": name, "logo": f"{team_id}.png"})
         self._save_teams(sorted(teams, key=lambda t: t["name"]))
         return team_id
 
     def rename_team(self, team_id, name):
-        teams = self.teams()
+        teams = [t for t in self.teams() if not t.get("home")]  # the home team's name is in Settings
         for t in teams:
             if t["id"] == team_id:
                 t["name"] = " ".join(str(name).split()) or t["name"]
         self._save_teams(teams)
 
     def delete_team(self, team_id):
-        self._save_teams([t for t in self.teams() if t["id"] != team_id])
+        if team_id == self.HOME_TEAM:
+            raise LibraryError("your own team is set in Settings")
+        self._save_teams([t for t in self.teams() if t["id"] != team_id and not t.get("home")])
         (self.teams_dir / f"{team_id}.png").unlink(missing_ok=True)
 
     def use_team(self, team_id, event_folder):
@@ -241,7 +253,7 @@ class Library:
             raise LibraryError(f"no team {team_id!r}")
         target = Path(event_folder) / "assets" / "teams" / team["logo"]
         target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(self.teams_dir / team["logo"], target)
+        shutil.copyfile(self.team_logo_path(team), target)
         return {"name": team["name"], "logo": f"assets/teams/{team['logo']}"}
 
     # --- events ---

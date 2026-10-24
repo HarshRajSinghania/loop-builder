@@ -16,7 +16,6 @@ async function load() {
   home = await api("/api/home");
   $("#team").textContent = home.settings.team || "";
   $("#setup").hidden = home.templates_found;
-  $("#version").textContent = `Loop Builder ${home.version}`;
   if (home.update) {
     $("#update").hidden = false;
     $("#update").replaceChildren(`Loop Builder ${home.update.version} is available (you have ${home.version}). `,
@@ -95,50 +94,6 @@ $("#setup-save").addEventListener("click", async () => {
 });
 
 // Settings
-document.querySelectorAll("[data-pick]").forEach((b) => b.addEventListener("click", () => pickFolder($(`#${b.dataset.pick}`))));
-const showLogo = () => { const img = $("#logo"); img.hidden = !home.settings.logo; if (home.settings.logo) img.src = `/api/team/logo?t=${Date.now()}`; };
-$("#open-settings").addEventListener("click", () => {
-  $("#set-team").value = home.settings.team || "";
-  $("#set-templates").value = home.settings.templates || "";
-  $("#set-export").value = home.settings.export_dir || "";
-  $("#set-lanes").value = String(home.settings.pool_lanes ?? 8);
-  $("#set-first").value = String(home.settings.first_lane ?? 1);
-  $("#template-count").textContent = home.templates_found ? `${home.template_count} templates found` : "Folder not found";
-  $("#settings-status").textContent = "";
-  showLogo();
-  const look = home.settings.theme || DEFAULTS;
-  $("#team-colours").replaceChildren(...COLOURS.map(([k, name, hint]) => el("label", { class: "swatch-field" },
-    el("input", { type: "color", id: `team-${k}`, value: look[k] || DEFAULTS[k], "aria-label": `Team ${name.toLowerCase()} colour`,
-      on: { input: previewLook } }),
-    el("span", {}, name))));
-  previewLook();
-  $("#settings").showModal();
-});
-// A sample welcome card in the chosen colours, drawn by the real renderer as you pick them.
-const teamLook = () => Object.fromEntries(COLOURS.map(([k]) => [k, $(`#team-${k}`).value.toUpperCase()]));
-let previewTimer = null;
-function previewLook() {
-  clearTimeout(previewTimer);
-  previewTimer = setTimeout(async () => {
-    const res = await fetch("/api/settings/preview", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ theme: teamLook() }) });
-    if (res.ok) $("#look-preview").src = URL.createObjectURL(await res.blob());
-  }, 150);
-}
-$("#logo-file").addEventListener("change", async (ev) => {
-  const file = ev.target.files[0];
-  ev.target.value = "";
-  if (!file) return;
-  try { await upload("/api/settings/logo", file); home.settings.logo = true; showLogo(); previewLook(); }
-  catch (err) { $("#settings-status").textContent = err.message; }
-});
-$("#settings-save").addEventListener("click", async () => {
-  try {
-    await api("/api/settings", "PUT", { team: $("#set-team").value.trim(), templates: $("#set-templates").value.trim(),
-      export_dir: $("#set-export").value.trim(), pool_lanes: Number($("#set-lanes").value), first_lane: Number($("#set-first").value),
-      theme: teamLook() });
-    $("#settings").close(); status("Settings saved."); load();
-  } catch (err) { $("#settings-status").textContent = err.message; }
-});
+$("#open-settings").addEventListener("click", () => openSettings(async () => { status("Settings saved."); await load(); }));
 
 load();
