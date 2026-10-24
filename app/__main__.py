@@ -47,6 +47,23 @@ class NativeDialogs:
         return self._dialog("SAVE", directory=start or "", save_filename=name)
 
 
+WINDOW = (1440, 960)
+MIN_WINDOW = (900, 560)  # fits a 1080p screen at 150% scaling (1280 x 720 before the taskbar)
+SCREEN_MARGIN = 80  # the taskbar or Dock and the window's title bar
+
+
+def window_fit(screens):
+    """The window's size, smallest size and whether to open maximized. A window taller than the screen
+    hides the bottom of the page, and dialogs' buttons with it, so on a small screen it opens maximized:
+    that fills the screen without the taskbar, whatever the display scaling."""
+    if not screens:
+        return WINDOW, MIN_WINDOW, False
+    width, height = screens[0].width, screens[0].height - SCREEN_MARGIN
+    fits = WINDOW[0] <= width and WINDOW[1] <= height
+    smallest = (min(MIN_WINDOW[0], width), min(MIN_WINDOW[1], height))
+    return (WINDOW if fits else (min(WINDOW[0], width), min(WINDOW[1], height))), smallest, not fits
+
+
 def ensure_streams():
     """A windowed build (no console) starts with no stdout/stderr, and uvicorn's logging fails on that: send
     them to loop-builder.log in the Loop Builder folder, fresh each start."""
@@ -87,8 +104,13 @@ def main():
     while not server.started and time.monotonic() < deadline:  # open the window only once the page can load
         time.sleep(0.05)
     dialogs = NativeDialogs()
+    try:
+        screens = webview.screens
+    except Exception:  # pylint: disable=broad-except  # no screen list: the default size
+        screens = []
+    (width, height), smallest, maximized = window_fit(screens)
     dialogs._window = webview.create_window(  # pylint: disable=protected-access
-        "Loop Builder", url, width=1440, height=960, min_size=(1024, 700), js_api=dialogs
+        "Loop Builder", url, width=width, height=height, min_size=smallest, maximized=maximized, js_api=dialogs
     )
     webview.start()
     server.should_exit = True

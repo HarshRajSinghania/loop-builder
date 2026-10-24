@@ -1,10 +1,11 @@
-"""Starting without a console, as the packaged Windows app does."""
+"""Starting without a console, as the packaged Windows app does, in a window that fits the screen."""
 
 import sys
+from types import SimpleNamespace as Screen
 
 import uvicorn
 
-from app.__main__ import ensure_streams
+from app.__main__ import MIN_WINDOW, WINDOW, ensure_streams, window_fit
 
 
 def test_a_windowed_start_logs_to_a_file_instead_of_failing(tmp_path, monkeypatch):
@@ -22,3 +23,10 @@ def test_a_windowed_start_logs_to_a_file_instead_of_failing(tmp_path, monkeypatc
 
 def test_a_console_start_keeps_its_streams():
     assert ensure_streams() is None
+
+
+def test_the_window_fits_the_screen():
+    assert window_fit([Screen(width=2560, height=1440)]) == (WINDOW, MIN_WINDOW, False)
+    size, smallest, maximized = window_fit([Screen(width=1280, height=720)])  # 1080p at 150%
+    assert maximized and size[1] <= 640 and smallest[1] <= 640
+    assert window_fit([]) == (WINDOW, MIN_WINDOW, False)
