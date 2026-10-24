@@ -8,12 +8,14 @@ browser tab instead (reload and dev tools); --no-open only serves; --port picks 
 
 import argparse
 import socket
+import sys
 import threading
 import time
 import webbrowser
 
 import uvicorn
 
+from app.library import default_root
 from app.server import create_app
 
 
@@ -45,7 +47,21 @@ class NativeDialogs:
         return self._dialog("SAVE", directory=start or "", save_filename=name)
 
 
+def ensure_streams():
+    """A windowed build (no console) starts with no stdout/stderr, and uvicorn's logging fails on that: send
+    them to loop-builder.log in the Loop Builder folder, fresh each start."""
+    if sys.stdout is not None and sys.stderr is not None:
+        return None
+    log = default_root() / "loop-builder.log"
+    log.parent.mkdir(parents=True, exist_ok=True)
+    stream = open(log, "w", encoding="utf-8", buffering=1)  # pylint: disable=consider-using-with  # app-long
+    sys.stdout = sys.stdout or stream
+    sys.stderr = sys.stderr or stream
+    return log
+
+
 def main():
+    ensure_streams()
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("event", nargs="?")
     ap.add_argument("--templates", help="DisplayLink Plus template folder (overrides the setting)")
