@@ -367,7 +367,14 @@ function pickTemplate({ allowBlank = false, current = "" } = {}) {
     const live = state.templateDetails.filter((t) => t.live).length;
     const order = Object.keys(groups).sort((x, y) => (x === "Templates" ? -1 : y === "Templates" ? 1 : x.localeCompare(y)));
     const usableFirst = (list) => [...list].sort((x, y) => Number(x.live || !!x.broken) - Number(y.live || !!y.broken));
-    $("#tpl-grid").replaceChildren(
+    // No templates to show (a fresh install has no folder set): say why, with the way to fix it.
+    const empty = !state.templateDetails.length && el("div", { class: "folder-status warn-box" },
+      el("p", { class: "warn" }, state.event.templates_found
+        ? `There are no DisplayLink Plus templates (.tpl) in ${state.event.templates_folder}.`
+        : "This event has no DisplayLink Plus template folder yet, so there are no board templates to choose from."),
+      el("button", { class: "btn btn-primary", type: "button", on: { click: () => { dialog.close(); setTemplateFolder(); } } },
+        "Set DisplayLink Plus template folder…"));
+    $("#tpl-grid").replaceChildren(...(empty ? [empty] : []),
       ...(allowBlank ? [el("section", { class: "tpl-group" }, el("div", { class: "tpl-cards" },
         el("button", { type: "button", class: "tpl-card", "aria-current": String(!current || current === "blank"), on: { click: () => choose("blank") } },
           el("span", { class: "tpl-blank" }, "Blank"), el("span", { class: "tpl-card-name" }, "No board, just the slide"))))] : []),
