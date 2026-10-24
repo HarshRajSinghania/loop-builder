@@ -482,6 +482,7 @@ def create_app(event_path=None, templates=None, library=None):
             "panels": s.event.panels,
             "templates_folder": str(s.event.templates),
             "templates_found": s.event.templates.is_dir(),
+            "templates_set": s.folder_source != "settings" or bool(s.default()),  # else none chosen yet
             "templates_source": s.folder_source,
             "can_undo": bool(s.undo_stack),
             "can_redo": bool(s.redo_stack),

@@ -198,3 +198,18 @@ def test_events_opened_from_home_use_their_own_template_folder(tmp_path):
         and event["templates_source"] == "settings"
     )
     assert api.get("/api/templates").json()["templates"] == ["Welcome.tpl"]
+
+
+def test_the_event_says_whether_a_template_folder_is_set_at_all(client, tmp_path):
+    api, _ = client
+    event = api.get("/api/event").json()
+    assert not event["templates_set"] and not event["templates_found"]  # a fresh install: nothing chosen yet
+    folder = tmp_path / "Templates"
+    folder.mkdir()
+    (folder / "Welcome.tpl").write_bytes(b"enough for the folder check")
+    assert api.put("/api/event/templates", json={"folder": str(folder), "make_default": False}).status_code == 200
+    event = api.get("/api/event").json()
+    assert event["templates_set"] and event["templates_found"]
+    shutil.rmtree(folder)  # set, but not on this computer (an event made on another machine)
+    event = api.get("/api/event").json()
+    assert event["templates_set"] and not event["templates_found"]

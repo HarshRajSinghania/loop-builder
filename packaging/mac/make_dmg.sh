@@ -18,7 +18,8 @@ mkdir -p "$OUT"
 
 if [ -n "${APPLE_SIGN_IDENTITY:-}" ]; then
   echo "Signing the app"
-  codesign --force --deep --options runtime --timestamp --sign "$APPLE_SIGN_IDENTITY" "$APP"
+  codesign --force --deep --options runtime --timestamp \
+    --entitlements "$ROOT/packaging/mac/entitlements.plist" --sign "$APPLE_SIGN_IDENTITY" "$APP"
   codesign --verify --deep --strict "$APP"
 fi
 
