@@ -2,6 +2,9 @@
 
 VERSION = "0.1.4"
 
-# The GitHub "latest release" API address for the public repo, e.g.
-# https://api.github.com/repos/<owner>/<repo>/releases/latest. None until the repo exists: no update check.
-RELEASES_URL = None
+# Where the app asks, once at each start, whether a newer release exists (GitHub's "latest release" API).
+# None turns the update check off.
+RELEASES_URL = "https://api.github.com/repos/mhuot/loop-builder/releases/latest"
+
+PROJECT_URL = "https://github.com/mhuot/loop-builder"
+COPYRIGHT = "© 2026 Mike Huot"

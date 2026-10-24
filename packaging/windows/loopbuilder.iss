@@ -1,6 +1,6 @@
 ; Inno Setup script: a per-user installer for Loop Builder (no administrator rights needed).
 ;   iscc /DAppVersion=0.1.0 /DDistDir=..\..\dist packaging\windows\loopbuilder.iss
-; Signing: pass /DSign and define a sign tool named "signtool" (iscc /S"signtool=...") in CI.
+; Signing: CI signs Loop Builder.exe before this runs and the finished installer after (Azure Artifact Signing).
 ; WebView2: put MicrosoftEdgeWebview2Setup.exe (Microsoft's bootstrapper) next to this file before building;
 ; CI downloads it. It runs only when the Evergreen runtime isn't already installed.
 
@@ -18,7 +18,11 @@
 AppId={{6C3E2B7A-4F1D-4C8E-9B2A-1D5E7F9A0C34}
 AppName=Loop Builder
 AppVersion={#AppVersion}
-AppPublisher=Loop Builder
+AppPublisher=Mike Huot
+AppPublisherURL=https://github.com/mhuot/loop-builder
+AppSupportURL=https://github.com/mhuot/loop-builder/issues
+AppUpdatesURL=https://github.com/mhuot/loop-builder/releases
+AppCopyright=Copyright 2026 Mike Huot
 DefaultDirName={localappdata}\Programs\Loop Builder
 DefaultGroupName=Loop Builder
 DisableProgramGroupPage=yes

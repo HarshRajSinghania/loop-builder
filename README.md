@@ -22,6 +22,13 @@ on the board.
   to another loop, and versions kept on each export.
 - Runs offline. Events, templates and pictures stay on the computer.
 
+## Download
+
+Get the latest Windows installer (or portable zip) and Mac .dmg from
+[Releases](https://github.com/mhuot/loop-builder/releases/latest). Both are signed: the Windows files by
+Mike Huot through Microsoft Artifact Signing, and the Mac app with an Apple Developer ID, notarized by Apple.
+Loop Builder checks for a newer release when it starts and says so on the events page.
+
 ## Quick Start
 
 ```sh
@@ -52,4 +59,23 @@ For working on the editor itself, `--browser` opens it in a browser tab instead,
 - Events live in Documents › Loop Builder (set `LOOPBUILDER_HOME` to use another folder, as the tests do).
 - Tests: `.venv/bin/python -m pytest`. Lint: `.venv/bin/pylint loopgen app tests`. Format: `black -l 120`.
 - Pictures added to an event are kept as working copies at most 2048 px on the long side, so previews stay fast.
-- PyAV's FFmpeg build includes GPL components (x264, x265); the licence for distributed builds is still to decide.
+
+## Help and feedback
+
+Report a problem or ask for a feature in [Issues](https://github.com/mhuot/loop-builder/issues). In the app,
+Settings › About Loop Builder… has the version and these links. If something goes wrong in the packaged app,
+`Documents/Loop Builder/loop-builder.log` has the details.
+
+## Privacy
+
+Loop Builder keeps your events, pictures and settings on your computer. It doesn't collect or send anything
+about you or your events. At start it asks GitHub whether a newer release exists (`RELEASES_URL` in
+`app/version.py`; set it to `None` to turn that off).
+
+## License
+
+Loop Builder is licensed under the [Apache License 2.0](LICENSE). Copyright 2026 Mike Huot.
+
+The packaged app also includes third-party software under its own licenses, listed in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). PyAV's FFmpeg build includes the GPL x264 encoder, so the
+packaged app as a whole is distributed under the GNU GPL v3; this repository is its complete source.

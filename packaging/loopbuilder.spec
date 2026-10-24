@@ -21,7 +21,8 @@ if sys.platform == "win32":
   ffi=FixedFileInfo(filevers={nums}, prodvers={nums}),
   kids=[
     StringFileInfo([StringTable('040904B0', [
-      StringStruct('CompanyName', 'Loop Builder'),
+      StringStruct('CompanyName', 'Mike Huot'),
+      StringStruct('LegalCopyright', '© 2026 Mike Huot. Apache License 2.0.'),
       StringStruct('FileDescription', 'Loop Builder'),
       StringStruct('FileVersion', '{VERSION}'),
       StringStruct('ProductName', 'Loop Builder'),
@@ -39,6 +40,7 @@ a = Analysis(
     datas=[
         (str(ROOT / "app" / "static"), "app/static"),
         (str(ROOT / "loopgen" / "templates.yaml"), "loopgen"),
+        *[(str(ROOT / name), "app/legal") for name in ("LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.md")],
     ],
     hiddenimports=collect_submodules("uvicorn") + ["zxingcpp", "webview"],
     excludes=["tkinter", "matplotlib", "numpy.testing"],
@@ -53,4 +55,5 @@ if sys.platform == "darwin":
     app = BUNDLE(coll, name="Loop Builder.app", bundle_identifier="io.github.mhuot.loopbuilder",
                  icon=str(ROOT / "packaging" / "icons" / "loop-builder.icns"),
                  info_plist={"NSHighResolutionCapable": True, "CFBundleShortVersionString": VERSION,
-                             "CFBundleVersion": VERSION})
+                             "CFBundleVersion": VERSION,
+                             "NSHumanReadableCopyright": "© 2026 Mike Huot. Apache License 2.0."})

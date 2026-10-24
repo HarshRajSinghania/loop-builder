@@ -33,7 +33,7 @@ from loopgen.uploads import UploadError, prepare_upload
 
 from app.library import LOOK_COLOURS, STARTERS, Library, LibraryError
 from app.updates import check_for_update
-from app.version import RELEASES_URL, VERSION
+from app.version import COPYRIGHT, PROJECT_URL, RELEASES_URL, VERSION
 
 STATIC = Path(__file__).with_name("static")
 
@@ -109,6 +109,15 @@ class Session:
 
 THEME_KEYS = ("primary", "accent", "text", "muted", "background", "logo", "font")
 HEX = re.compile(r"#[0-9A-Fa-f]{6}")
+
+
+def legal_text(name):
+    """LICENSE, NOTICE or THIRD_PARTY_NOTICES.md: at the repo root when run from source, in app/legal when packaged."""
+    here = Path(__file__).resolve().parent
+    for path in (here.parent / name, here / "legal" / name):
+        if path.exists():
+            return path.read_text(encoding="utf-8")
+    return ""
 
 
 def look_colours(theme):
@@ -293,6 +302,16 @@ def create_app(event_path=None, templates=None, library=None):
             "folder": str(lib.root),
             "version": VERSION,
             "update": update or None,
+        }
+
+    @app.get("/api/about")
+    def about():
+        return {
+            "version": VERSION,
+            "copyright": COPYRIGHT,
+            "project": PROJECT_URL,
+            "update_check": bool(RELEASES_URL),
+            "notices": legal_text("THIRD_PARTY_NOTICES.md"),
         }
 
     @app.put("/api/settings")

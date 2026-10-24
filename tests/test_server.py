@@ -232,3 +232,10 @@ def test_the_event_says_whether_a_template_folder_is_set_at_all(client, tmp_path
     shutil.rmtree(folder)  # set, but not on this computer (an event made on another machine)
     event = api.get("/api/event").json()
     assert event["templates_set"] and not event["templates_found"]
+
+
+def test_about_has_the_version_links_and_notices(client):
+    api, _ = client
+    about = api.get("/api/about").json()
+    assert about["version"] and about["project"].startswith("https://github.com/")
+    assert "Apache" in about["notices"] and "x264" in about["notices"]
