@@ -306,9 +306,11 @@ def create_app(event_path=None, templates=None, library=None):
             raise HTTPException(422, f"folder not found: {changes['templates']}")
         if "theme" in changes:
             changes["theme"] = look_colours(changes["theme"])
+        before = lib.settings().get("templates")
         settings = lib.update_settings(**changes)
-        if "templates" in changes and current.session:
-            open_event(current.session.path)  # redraw boards from the new folder
+        if current.session and settings.get("templates") != before:
+            with current.session.lock:
+                current.session.reload()  # redraw boards from the new folder; undo history stays
         return settings
 
     @app.post("/api/settings/logo")
@@ -339,12 +341,12 @@ def create_app(event_path=None, templates=None, library=None):
 
     @app.put("/api/teams/{team_id}")
     def rename_team(team_id: str, body: NewEventBody):
-        lib.rename_team(team_id, body.name)
+        library_call(lib.rename_team, team_id, body.name)
         return {"ok": True}
 
     @app.delete("/api/teams/{team_id}")
     def delete_team(team_id: str):
-        lib.delete_team(team_id)
+        library_call(lib.delete_team, team_id)
         return {"ok": True}
 
     @app.get("/api/teams/{team_id}/logo")
@@ -352,7 +354,7 @@ def create_app(event_path=None, templates=None, library=None):
         team = next((t for t in lib.teams() if t["id"] == team_id), None)
         if team is None:
             raise HTTPException(404, "no such team")
-        return FileResponse(lib.teams_dir / team["logo"], headers={"Cache-Control": "no-store"})
+        return FileResponse(lib.team_logo_path(team), headers={"Cache-Control": "no-store"})
 
     @app.post("/api/teams/{team_id}/use")
     def use_team(team_id: str):
@@ -475,9 +477,12 @@ def create_app(event_path=None, templates=None, library=None):
                 props = next(iter(sl["raw"].values())) or {}
                 key = props.get("ref") or props.get("id")
                 sl["linked"] = uses.get(key, 0) if key and uses.get(key, 0) > 1 else 0
+        team_look = matches_team_look(s.data.get("theme") or {}, s.path.parent)
         return {
             "theme": s.data.get("theme") or {},
-            "team_look": matches_team_look(s.data.get("theme") or {}, s.path.parent),
+            "team_look": team_look,
+            # offer the team theme unless the event has it, or kept its own while the team theme was as it is now
+            "offer_team_theme": not team_look and s.data.get("own_theme") != lib.team_look_key(),
             "panels": s.event.panels,
             "templates_folder": str(s.event.templates),
             "templates_found": s.event.templates.is_dir(),
@@ -598,7 +603,16 @@ def create_app(event_path=None, templates=None, library=None):
     def save_theme(body: ThemeBody):
         colours = look_colours(body.theme)
         with s.lock:
-            s.change(lambda d: d.__setitem__("theme", {**(d.get("theme") or {}), **colours}))
+            key = lib.team_look_key()
+            s.change(lambda d: d.update(theme={**(d.get("theme") or {}), **colours}, own_theme=key))
+        return {"ok": True}
+
+    @app.post("/api/theme/keep")
+    def keep_theme():
+        """Keep the open event's theme though it differs from the team theme as it is now (undoable)."""
+        key = lib.team_look_key()
+        with s.lock:
+            s.change(lambda d: d.__setitem__("own_theme", key))
         return {"ok": True}
 
     @app.post("/api/theme/reset")
@@ -611,6 +625,7 @@ def create_app(event_path=None, templates=None, library=None):
             if logo:
                 theme["logo"] = logo
             d["theme"] = theme
+            d.pop("own_theme", None)
 
         with s.lock:
             s.change(edit)

@@ -20,10 +20,15 @@
     <button class="btn" type="button" id="open-theme">Theme…</button>
     <button class="btn" type="button" id="open-versions">Versions…</button>
     <button class="btn btn-primary" type="button" id="open-export">Export…</button>
+    <button class="btn" type="button" id="open-settings">Settings</button>
   </div>
 </header>
 <nav class="tabs" aria-label="Loops"><div id="tabs" class="tablist" role="tablist"></div><button class="tab add" type="button" id="new-loop">+ New loop</button></nav>
 
+<div id="theme-offer" class="setup offer" role="status" hidden>
+  <p>This event doesn't use your team theme from Settings (its logo and colours).</p>
+  <div class="row"><button class="btn btn-primary" type="button" id="offer-use">Use team theme</button><button class="btn" type="button" id="offer-keep">Keep this event's theme</button></div>
+</div>
 <main class="layout">
   <aside class="palette" aria-label="Add a slide">
     <p class="label">Add a slide</p>
@@ -112,7 +117,7 @@
   <form method="dialog" class="export">
     <h2>This event's theme</h2>
     <p class="muted">Slides use these colours by role, so changing one restyles every slide in the event. New events start from your team theme in Settings.</p>
-    <p class="row between"><span id="theme-source" class="muted" aria-live="polite"></span><button class="btn" type="button" id="theme-reset">Reset to team theme</button></p>
+    <p class="row between"><span id="theme-source" class="muted" aria-live="polite"></span><button class="btn" type="button" id="theme-reset">Use team theme</button></p>
     <div class="grid" id="theme-colours"></div>
     <div class="lbl">Logo
       <span class="row"><span class="logo-box"><img id="theme-logo" alt="Event logo" hidden></span><span class="muted">The team logo from Settings. A card can show a different picture instead.</span></span></div>
@@ -138,6 +143,7 @@
 </dialog>
 <input type="file" id="picker" accept="image/png,image/jpeg,image/webp" hidden>
 <script src="/static/common.js"></script>
+<script src="/static/settings.js"></script>
 <script src="/static/app.js"></script>
 </body>
 </html>

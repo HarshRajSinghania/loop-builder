@@ -1,0 +1,81 @@
+// Settings (team, folders, pool, team theme): one dialog for the events home and the editor.
+"use strict";
+
+document.body.insertAdjacentHTML("beforeend", `
+<dialog id="settings">
+  <form method="dialog" class="export">
+    <h2>Settings</h2>
+    <label class="lbl">Team name<input id="set-team" class="field" placeholder="e.g. Riverside Swim & Dive"></label>
+    <label class="lbl">DisplayLink Plus template folder<span class="row"><input id="set-templates" class="field mono grow"><button class="btn" type="button" data-pick="set-templates">Choose…</button></span><span id="template-count" class="muted"></span></label>
+    <label class="lbl">Default export folder<span class="row"><input id="set-export" class="field mono grow" placeholder="Where WMVs and PNGs go, e.g. the DisplayLink Plus video folder"><button class="btn" type="button" data-pick="set-export">Choose…</button></span></label>
+    <div class="grid">
+      <label class="lbl">Lanes in your pool<select id="set-lanes" class="field"><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option><option>9</option><option>10</option></select></label>
+      <label class="lbl">First lane is numbered<select id="set-first" class="field"><option value="1">1</option><option value="0">0</option></select></label>
+    </div>
+    <fieldset class="group">
+      <legend class="label">Team theme</legend>
+      <p class="muted">New events start with these colours and a copy of your logo. Each event can change its own from Theme… in the editor.</p>
+      <div class="lbl">Team logo (PNG with transparency)
+        <span class="row"><span class="logo-box"><img id="logo" alt="Team logo" hidden></span><label class="btn" for="logo-file">Choose a picture…</label><input type="file" id="logo-file" accept="image/png,image/webp,image/jpeg" hidden></span></div>
+      <div class="look-row"><div class="grid" id="team-colours"></div><img id="look-preview" class="look-preview" alt="A sample welcome card in the team theme"></div>
+    </fieldset>
+    <p id="settings-status" class="warn" aria-live="polite"></p>
+    <p id="version" class="muted"></p>
+    <div class="row end"><button class="btn" value="close">Close</button><button class="btn btn-primary" type="button" id="settings-save">Save</button></div>
+  </form>
+</dialog>`);
+
+let settingsHome = null; // /api/home when the dialog opened
+let settingsSaved = null;
+const showLogo = () => { const img = $("#logo"); img.hidden = !settingsHome.settings.logo; if (settingsHome.settings.logo) img.src = `/api/team/logo?t=${Date.now()}`; };
+// Open Settings; `onSaved` runs after a save (and after a new team logo, which is kept straight away).
+async function openSettings(onSaved) {
+  settingsHome = await api("/api/home");
+  settingsSaved = onSaved;
+  const s = settingsHome.settings;
+  $("#set-team").value = s.team || "";
+  $("#set-templates").value = s.templates || "";
+  $("#set-export").value = s.export_dir || "";
+  $("#set-lanes").value = String(s.pool_lanes ?? 8);
+  $("#set-first").value = String(s.first_lane ?? 1);
+  $("#template-count").textContent = settingsHome.templates_found ? `${settingsHome.template_count} templates found` : "Folder not found";
+  $("#settings-status").textContent = "";
+  $("#version").textContent = `Loop Builder ${settingsHome.version}`;
+  showLogo();
+  const look = s.theme || DEFAULTS;
+  $("#team-colours").replaceChildren(...COLOURS.map(([k, name]) => el("label", { class: "swatch-field" },
+    el("input", { type: "color", id: `team-${k}`, value: look[k] || DEFAULTS[k], "aria-label": `Team ${name.toLowerCase()} colour`,
+      on: { input: previewLook } }),
+    el("span", {}, name))));
+  previewLook();
+  $("#settings").showModal();
+}
+$("#settings").querySelectorAll("[data-pick]").forEach((b) => b.addEventListener("click", () => pickFolder($(`#${b.dataset.pick}`))));
+// A sample welcome card in the chosen colours, drawn by the real renderer as you pick them.
+const teamLook = () => Object.fromEntries(COLOURS.map(([k]) => [k, $(`#team-${k}`).value.toUpperCase()]));
+let lookTimer = null;
+function previewLook() {
+  clearTimeout(lookTimer);
+  lookTimer = setTimeout(async () => {
+    const res = await fetch("/api/settings/preview", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ theme: teamLook() }) });
+    if (res.ok) $("#look-preview").src = URL.createObjectURL(await res.blob());
+  }, 150);
+}
+$("#logo-file").addEventListener("change", async (ev) => {
+  const file = ev.target.files[0];
+  ev.target.value = "";
+  if (!file) return;
+  try { await upload("/api/settings/logo", file); settingsHome.settings.logo = true; showLogo(); previewLook(); }
+  catch (err) { $("#settings-status").textContent = err.message; return; }
+  if (settingsSaved) await settingsSaved(); // the logo is kept straight away, so the page behind catches up now
+});
+$("#settings-save").addEventListener("click", async () => {
+  try {
+    await api("/api/settings", "PUT", { team: $("#set-team").value.trim(), templates: $("#set-templates").value.trim(),
+      export_dir: $("#set-export").value.trim(), pool_lanes: Number($("#set-lanes").value), first_lane: Number($("#set-first").value),
+      theme: teamLook() });
+    $("#settings").close();
+    if (settingsSaved) await settingsSaved();
+  } catch (err) { $("#settings-status").textContent = err.message; }
+});
