@@ -1,0 +1,71 @@
+# A made-up dual meet: Riverside Otters host Lakeview. The teams and logos are fictional.
+# Render: python -m loopgen examples/dual-meet/event.yaml --templates "<DisplayLink Plus template folder>" --out OUT
+event: Riverside vs Lakeview
+date: 2026-10-30
+board: {width: 320, height: 176}
+theme:
+  primary: "#1F6FD1"
+  accent: "#F2B632"
+  text: "#FFFFFF"
+  muted: "#AAB4BE"
+  logo: assets/riverside-otters.png
+  font: Arial
+
+loops:
+  - name: Welcome loop
+    hold: 10
+    slides:
+      - board: {template: Welcome - Meet Mobile.tpl}
+      - card:
+          id: welcome-guests
+          layout: logo-center
+          bars: none
+          lines:
+            - {text: Welcome, size: M, style: outlined}
+            - {text: LAKEVIEW, size: L, style: outlined}
+            - {text: Thanks for swimming with us!, size: S}
+      - card:
+          id: senior-night
+          layout: logo-center
+          lines:
+            - {text: SENIOR NIGHT!, size: L, style: outlined}
+            - {text: Time to celebrate, size: M}
+            - {text: our seniors!, size: M, style: accent}
+      - image: {id: guest-logo, file: assets/lakeview.png, fit: fit}
+
+  - name: Diving loop
+    hold: 10
+    slides:
+      - card: &diving
+          layout: stack
+          lines:
+            - {text: DIVING, size: L, style: outlined}
+            - {text: Quiet please, size: M, style: bold}
+            - {text: during each dive, size: M}
+            - {text: Cheer after the splash!, size: M, style: accent}
+      - board: {template: Welcome - Meet Mobile.tpl}
+      - card: {ref: welcome-guests}
+      - card: *diving
+      - card: {ref: senior-night}
+      - image: {ref: guest-logo}
+
+  - name: Raffle
+    hold: 10
+    slides:
+      - card:
+          layout: logo-center
+          lines:
+            - {text: RAFFLE TONIGHT!, size: L, style: outlined}
+            - {text: Tickets at the front table, size: M, style: accent}
+
+  - name: Warm-up 10 min + resume
+    repeat: false
+    slides:
+      - countdown: {label: WARM-UP, length: "10:00", background: Welcome - Meet Mobile.tpl, hold_at_zero: 5}
+      - crawl:
+          length: "3:00"
+          speed: medium
+          segments:
+            - {text: "The meet will "}
+            - {text: RESUME, style: outlined}
+            - {text: " shortly", style: accent}

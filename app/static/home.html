@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Loop Builder — events</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<header class="bar">
+  <div class="brand">
+    <svg width="28" height="28" viewBox="0 0 28 28" aria-hidden="true"><rect x="2" y="6" width="24" height="16" rx="3" fill="none" stroke="#5AA2FF" stroke-width="2"/><path d="M8 14h12M16 10l4 4-4 4" fill="none" stroke="#5AA2FF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <span class="name">Loop Builder</span>
+    <span id="team" class="crumb"></span>
+  </div>
+  <div class="actions"><span id="status" class="muted" aria-live="polite"></span><button class="btn" type="button" id="open-settings">Settings</button></div>
+</header>
+
+<main class="home">
+  <p id="update" class="setup" hidden></p>
+  <section id="setup" class="setup" hidden aria-labelledby="setup-h">
+    <h2 id="setup-h">Choose your DisplayLink Plus template folder</h2>
+    <p class="muted">Board slides and countdown backgrounds come from your DisplayLink Plus templates (.tpl). On the DisplayLink Plus PC that's the folder DisplayLink Plus keeps them in; on another computer, any folder holding copies.</p>
+    <div class="row"><input id="setup-folder" class="field mono grow" placeholder="Folder with your .tpl files" aria-label="DisplayLink Plus template folder"><button class="btn" type="button" id="setup-pick">Choose…</button><button class="btn btn-primary" type="button" id="setup-save">Use this folder</button></div>
+  </section>
+
+  <section aria-labelledby="new-h" class="block">
+    <div class="row between"><h2 id="new-h">Start a new event</h2><label class="btn" for="import-file">Import a .loopevent…</label><input type="file" id="import-file" accept=".loopevent,application/zip" hidden></div>
+    <div class="row"><label class="lbl grow">Event name<input id="new-name" class="field" placeholder="e.g. Sections"></label><label class="lbl">Date<input id="new-date" class="field" type="date"></label></div>
+    <div id="starters" class="starters"></div>
+  </section>
+
+  <section aria-labelledby="ev-h" class="block">
+    <div class="row between"><h2 id="ev-h">Events</h2><input id="search" class="field" placeholder="Search events" aria-label="Search events"></div>
+    <ol id="events" class="events"></ol>
+    <p id="folder" class="muted"></p>
+  </section>
+</main>
+
+<dialog id="settings">
+  <form method="dialog" class="export">
+    <h2>Settings</h2>
+    <label class="lbl">Team name<input id="set-team" class="field" placeholder="e.g. Riverside Swim & Dive"></label>
+    <label class="lbl">DisplayLink Plus template folder<span class="row"><input id="set-templates" class="field mono grow"><button class="btn" type="button" data-pick="set-templates">Choose…</button></span><span id="template-count" class="muted"></span></label>
+    <label class="lbl">Default export folder<span class="row"><input id="set-export" class="field mono grow" placeholder="Where WMVs and PNGs go, e.g. the DisplayLink Plus video folder"><button class="btn" type="button" data-pick="set-export">Choose…</button></span></label>
+    <div class="grid">
+      <label class="lbl">Lanes in your pool<select id="set-lanes" class="field"><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option><option>9</option><option>10</option></select></label>
+      <label class="lbl">First lane is numbered<select id="set-first" class="field"><option value="1">1</option><option value="0">0</option></select></label>
+    </div>
+    <fieldset class="group">
+      <legend class="label">Team theme</legend>
+      <p class="muted">New events start with these colours and a copy of your logo. Each event can change its own from Theme… in the editor.</p>
+      <div class="lbl">Team logo (PNG with transparency)
+        <span class="row"><span class="logo-box"><img id="logo" alt="Team logo" hidden></span><label class="btn" for="logo-file">Choose a picture…</label><input type="file" id="logo-file" accept="image/png,image/webp,image/jpeg" hidden></span></div>
+      <div class="look-row"><div class="grid" id="team-colours"></div><img id="look-preview" class="look-preview" alt="A sample welcome card in the team theme"></div>
+    </fieldset>
+    <p id="settings-status" class="warn" aria-live="polite"></p>
+    <p id="version" class="muted"></p>
+    <div class="row end"><button class="btn" value="close">Close</button><button class="btn btn-primary" type="button" id="settings-save">Save</button></div>
+  </form>
+</dialog>
+<script src="/static/common.js"></script>
+<script src="/static/home.js"></script>
+</body>
+</html>

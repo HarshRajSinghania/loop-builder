@@ -1,0 +1,165 @@
+"""Load an event file and normalise its loops and slides."""
+
+import copy
+from dataclasses import dataclass, field
+from pathlib import Path
+
+import yaml
+from PIL import ImageColor
+
+SLIDE_TYPES = ("board", "card", "qr", "image", "countdown", "crawl", "lanes")
+TIMED = ("countdown", "crawl")
+COMMON = ("id", "hold", "fade", "notes")
+DEFAULT_THEME = {
+    "primary": "#CC0202",
+    "accent": "#F0C878",
+    "text": "#FFFFFF",
+    "muted": "#AAAAAA",
+    "background": "#000000",
+    "logo": None,
+    "font": "Arial",
+}
+PANELS_FILE = Path(__file__).with_name("templates.yaml")
+
+
+class EventError(ValueError):
+    """The event file can't be read as an event."""
+
+
+@dataclass
+class Slide:
+    type: str
+    props: dict
+    id: str = None
+    hold: float = None
+    fade: float = None
+    notes: str = None
+
+    @property
+    def timed(self):
+        return self.type in TIMED
+
+
+@dataclass
+class Loop:
+    name: str
+    slides: list
+    hold: float = 10.0
+    fade: float = 0.5
+    repeat: bool = True  # the last slide fades back into the first; a loop with a countdown ends on its last slide
+
+
+@dataclass
+class Event:
+    name: str
+    path: Path
+    width: int
+    height: int
+    theme: dict
+    loops: list
+    templates: Path
+    panels: dict = field(default_factory=dict)
+    date: str = None
+    fps: int = 30
+
+    def resolve(self, value):
+        """A path from the event file, relative to the file unless absolute or ~."""
+        p = Path(str(value)).expanduser()
+        return p if p.is_absolute() else self.path.parent / p
+
+    def template(self, name):
+        """A template's file. A name not found where it says is looked for by file name anywhere under the
+        template folder, so picking a folder one level up (e.g. the whole DisplayLink Plus library) still works."""
+        p = Path(str(name)).expanduser()
+        if p.is_absolute():
+            return p
+        direct = self.templates / p
+        if direct.exists() or not self.templates.is_dir():
+            return direct
+        matches = [m for m in self.templates.rglob(p.name) if m.is_file()]
+        return matches[0] if len(matches) == 1 else direct
+
+    def color(self, role):
+        return ImageColor.getrgb(self.theme[role])
+
+    def loop(self, key):
+        """A loop by name or 1-based number."""
+        for i, loop in enumerate(self.loops, 1):
+            if key in (loop.name, str(i)):
+                return loop
+        raise EventError(f"no loop named {key!r}; loops: {', '.join(l.name for l in self.loops)}")
+
+
+def _slide(item, where):
+    if not isinstance(item, dict) or len(item) != 1 or next(iter(item)) not in SLIDE_TYPES:
+        raise EventError(f"{where}: a slide is one of {', '.join(SLIDE_TYPES)}, e.g. '- card: {{...}}'")
+    kind, props = next(iter(item.items()))
+    props = dict(props or {})
+    common = {k: props.pop(k) for k in COMMON if k in props}
+    return Slide(kind, props, **common)
+
+
+def load_event(path, templates=None):
+    """Read an event file; `templates` (the DisplayLink Plus template folder setting) overrides the file's own."""
+    path = Path(path).expanduser().resolve()
+    data = yaml.safe_load(path.read_text())
+    if not isinstance(data, dict) or "loops" not in data:
+        raise EventError(f"{path}: an event file needs 'loops'")
+    board = data.get("board") or {}
+    theme = {**DEFAULT_THEME, **(data.get("theme") or {})}
+    panels = {}
+    if PANELS_FILE.exists():
+        panels.update(
+            {k: v["panel"] for k, v in (yaml.safe_load(PANELS_FILE.read_text()) or {}).items() if "panel" in v}
+        )
+    panels.update({k: v["panel"] for k, v in (data.get("template_panels") or {}).items()})
+    templates = Path(str(templates or data.get("templates", "templates"))).expanduser()
+    if not templates.is_absolute():
+        templates = path.parent / templates
+
+    loops, by_id = [], {}
+    for n, raw in enumerate(data["loops"], 1):
+        where = f"loop {n} ({raw.get('name', '?')})"
+        slides = [_slide(item, f"{where}, slide {i}") for i, item in enumerate(raw.get("slides") or [], 1)]
+        for s in slides:
+            if s.id and "ref" not in s.props:
+                if s.id in by_id:
+                    raise EventError(f"{where}: slide id {s.id!r} is used twice")
+                by_id[s.id] = s
+        loops.append(
+            Loop(
+                raw.get("name") or f"Loop {n}",
+                slides,
+                float(raw.get("hold", 10)),
+                float(raw.get("fade", 0.5)),
+                not any(s.type == "countdown" for s in slides),  # older files' `repeat` is ignored
+            )
+        )
+    for loop in loops:  # linked slides: same content, the link may override hold and fade
+        for i, s in enumerate(loop.slides):
+            if "ref" in s.props:
+                target = by_id.get(s.props["ref"])
+                if target is None:
+                    raise EventError(f"{loop.name}: slide {i + 1} links to unknown id {s.props['ref']!r}")
+                if target.type != s.type:
+                    raise EventError(f"{loop.name}: slide {i + 1} is a {s.type} but {target.id!r} is a {target.type}")
+                loop.slides[i] = Slide(
+                    target.type,
+                    copy.deepcopy(target.props),
+                    target.id,
+                    s.hold if s.hold is not None else target.hold,
+                    s.fade if s.fade is not None else target.fade,
+                    s.notes or target.notes,
+                )
+    return Event(
+        data.get("event") or path.stem,
+        path,
+        int(board.get("width", 320)),
+        int(board.get("height", 176)),
+        theme,
+        loops,
+        templates,
+        panels,
+        data.get("date") and str(data["date"]),
+        int(data.get("fps", 30)),
+    )

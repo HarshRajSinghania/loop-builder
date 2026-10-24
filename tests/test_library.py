@@ -1,0 +1,78 @@
+"""The Loop Builder folder: starters, duplicates, settings and .loopevent packages."""
+
+import zipfile
+
+import pytest
+
+from app.library import STARTERS, Library, LibraryError
+from loopgen import load_event, render_slide, run_checks
+
+
+@pytest.fixture(name="lib")
+def fixture_lib(tmp_path):
+    return Library(tmp_path / "Loop Builder")
+
+
+@pytest.mark.parametrize("starter", sorted(STARTERS))
+def test_every_starter_loads_and_draws(lib, starter):
+    slug = lib.create(f"{starter} test", starter)
+    event = load_event(lib.event_file(slug))
+    for loop in event.loops:
+        for i in range(len(loop.slides)):
+            assert render_slide(event, loop, i).size == (320, 176)
+    errors = [i for i in run_checks(event) if i.level == "error"]
+    assert all("QR" in e.message for e in errors)  # only the Sections heat-sheet link, left for the team to fill in
+
+
+def test_names_never_collide_and_duplicates_are_independent(lib):
+    first = lib.create("Dual: Lakeview", "dual-meet")
+    second = lib.create("Dual: Lakeview", "dual-meet")
+    assert first == "Dual- Lakeview" and second == "Dual- Lakeview (2)"
+    copy = lib.duplicate(first, "Next week")
+    assert load_event(lib.event_file(copy)).name == "Next week"
+    assert {e["slug"] for e in lib.events()} == {first, second, copy}
+
+
+def test_package_round_trip_and_unsafe_packages(lib, tmp_path):
+    slug = lib.create("Sections", "sections")
+    package = lib.export_package(slug, tmp_path / "Sections")
+    assert package.suffix == ".loopevent"
+    assert load_event(lib.event_file(lib.import_package(package))).name == "Sections"
+    bad = tmp_path / "bad.loopevent"
+    with zipfile.ZipFile(bad, "w") as z:
+        z.writestr("event.yaml", "event: x\nloops: []\n")
+        z.writestr("../../escape.txt", "no")
+    with pytest.raises(LibraryError):
+        lib.import_package(bad)
+
+
+def test_settings_keep_known_keys_only(lib):
+    lib.update_settings(team="Riverside", templates="/tmp", nonsense=1)
+    settings = lib.settings()
+    assert settings["team"] == "Riverside" and "nonsense" not in settings
+
+
+def test_team_library_trims_logos_and_copies_them_into_events(lib, tmp_path):
+    from PIL import Image  # pylint: disable=import-outside-toplevel
+
+    logo = Image.new("RGB", (400, 300), "white")
+    logo.paste((0, 80, 200), (100, 75, 300, 225))  # a blue badge on a white page
+    logo.save(tmp_path / "pine-ridge.jpg")
+    team_id = lib.add_team("Pine Ridge", tmp_path / "pine-ridge.jpg", trim=True)
+    stored = Image.open(lib.teams_dir / f"{team_id}.png")
+    assert stored.mode == "RGBA" and 200 <= stored.width <= 212 and 150 <= stored.height <= 162  # page gone (JPEG
+    # noise at the badge's edge keeps a few px)
+    slug = lib.create("Sections", "sections")
+    used = lib.use_team(team_id, lib.event_file(slug).parent)
+    assert used == {"name": "Pine Ridge", "logo": "assets/teams/pine-ridge.png"}
+    assert (lib.event_file(slug).parent / used["logo"]).exists()
+    lib.rename_team(team_id, "PINE RIDGE")
+    assert lib.teams()[0]["name"] == "PINE RIDGE"
+    lib.delete_team(team_id)
+    assert lib.teams() == []
+
+
+def test_pool_lanes_are_team_settings(lib):
+    assert lib.settings()["pool_lanes"] == 8 and lib.settings()["first_lane"] == 1
+    lib.update_settings(pool_lanes=10, first_lane=0)
+    assert lib.settings()["pool_lanes"] == 10 and lib.settings()["first_lane"] == 0

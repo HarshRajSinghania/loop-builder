@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Loop Builder</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<header class="bar">
+  <div class="brand">
+    <svg width="28" height="28" viewBox="0 0 28 28" aria-hidden="true"><rect x="2" y="6" width="24" height="16" rx="3" fill="none" stroke="#5AA2FF" stroke-width="2"/><path d="M8 14h12M16 10l4 4-4 4" fill="none" stroke="#5AA2FF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <span class="name">Loop Builder</span>
+    <span id="event-name" class="crumb"></span>
+  </div>
+  <div class="actions">
+    <span id="saved" class="muted" aria-live="polite"></span>
+    <button class="btn icon" type="button" id="undo" aria-label="Undo (Ctrl+Z)" title="Undo (Ctrl+Z)">↶</button>
+    <button class="btn icon" type="button" id="redo" aria-label="Redo (Ctrl+Shift+Z)" title="Redo (Ctrl+Shift+Z)">↷</button>
+    <button class="btn" type="button" id="open-theme">Theme…</button>
+    <button class="btn" type="button" id="open-versions">Versions…</button>
+    <button class="btn btn-primary" type="button" id="open-export">Export…</button>
+  </div>
+</header>
+<nav class="tabs" aria-label="Loops"><div id="tabs" class="tablist" role="tablist"></div><button class="tab add" type="button" id="new-loop">+ New loop</button></nav>
+
+<main class="layout">
+  <aside class="palette" aria-label="Add a slide">
+    <p class="label">Add a slide</p>
+    <p class="muted">Drag into the loop, or click to add after the selected slide.</p>
+    <div id="palette"></div>
+  </aside>
+
+  <section class="strip" aria-label="Slides in this loop">
+    <div class="strip-head"><p class="label" id="loop-name"></p><span class="mono" id="loop-length"></span></div>
+    <div class="loop-settings">
+      <label>Hold <input id="loop-hold" class="field small mono" type="number" min="1" max="600" step="0.5"> s</label>
+      <label>Fade <input id="loop-fade" class="field small mono" type="number" min="0" max="5" step="0.1"> s</label>
+    </div>
+    <ol id="slides"></ol>
+  </section>
+
+  <section class="inspector" aria-label="Selected slide">
+    <div class="insp-head">
+      <div><p class="label" id="slide-kind"></p><h1 id="slide-title"></h1></div>
+      <div class="row">
+        <button class="btn icon" type="button" id="move-up" aria-label="Move slide earlier">↑</button>
+        <button class="btn icon" type="button" id="move-down" aria-label="Move slide later">↓</button>
+        <button class="btn" type="button" id="duplicate">Duplicate</button>
+        <button class="btn" type="button" id="open-copy">Copy to another loop…</button>
+        <button class="btn" type="button" id="delete">Delete</button>
+      </div>
+    </div>
+    <figure class="preview">
+      <div class="stage"><img id="preview" alt="Slide preview at 3×"></div>
+      <figcaption><span id="render-ms" class="muted"></span><span id="qr-check"></span><span id="issues" class="warn"></span></figcaption>
+      <div id="scrub" class="scrub" hidden><label class="muted">Preview at <input id="scrub-at" type="range" min="0" step="0.5" value="0"></label><span id="scrub-label" class="mono"></span></div>
+    </figure>
+    <div id="editor" class="editor"></div>
+    <div id="checks" class="checks"></div>
+  </section>
+</main>
+
+<dialog id="export">
+  <form method="dialog" class="export">
+    <h2>Export loops</h2>
+    <div id="export-loops"></div>
+    <label class="field-row">Export folder <span class="row"><input id="out-dir" class="field mono grow" required><button class="btn" type="button" id="pick-out">Choose…</button></span></label>
+    <fieldset class="formats">
+      <legend class="label">Make</legend>
+      <label class="check-row"><input type="checkbox" id="fmt-wmv" checked> Video (WMV) for each loop</label>
+      <label class="check-row"><input type="checkbox" id="fmt-png"> Images (PNG), one per still slide, for the DisplayLink Plus library</label>
+      <label class="check-row"><input type="checkbox" id="mp4"> An MP4 to review on a laptop</label>
+    </fieldset>
+    <p id="export-status" class="muted" aria-live="polite"></p>
+    <div class="row end"><button class="btn" value="close">Close</button><button class="btn btn-primary" type="button" id="run-export">Export selected</button></div>
+  </form>
+</dialog>
+<dialog id="teams-dialog">
+  <form method="dialog" class="export">
+    <h2>Teams</h2>
+    <p class="muted">Each team's name and logo, kept for every event. Lane slides use them.</p>
+    <ol id="teams-list" class="version-list"></ol>
+    <fieldset class="group">
+      <legend class="label">Add a team</legend>
+      <div class="row"><input id="team-name" class="field grow" placeholder="Name on the board, e.g. LAKEVIEW"><input id="team-file" type="file" accept="image/png,image/jpeg,image/webp" class="field"></div>
+      <label class="check-row"><input type="checkbox" id="team-trim" checked> Remove a white background around the logo</label>
+      <div class="row"><button class="btn btn-primary" type="button" id="team-add">Add team</button><span id="team-status" class="muted" aria-live="polite"></span></div>
+    </fieldset>
+    <div class="row end"><button class="btn" value="close">Done</button></div>
+  </form>
+</dialog>
+<dialog id="folder-dialog">
+  <form method="dialog" class="export">
+    <h2>DisplayLink Plus template folder</h2>
+    <p class="warn">This sets the folder for this whole event: every Board slide, countdown background and crawl panel in it is drawn from these templates.</p>
+    <p class="muted">On the DisplayLink Plus PC it's the folder DisplayLink Plus keeps its templates in; on another computer, any folder holding copies of them.</p>
+    <label class="lbl">Folder<span class="row"><input id="folder-path" class="field mono grow" placeholder="Folder with your .tpl files"><button class="btn" type="button" id="folder-pick">Choose…</button></span></label>
+    <label class="check-row"><input type="checkbox" id="folder-default"> Also use this folder for new events</label>
+    <p id="folder-status" class="warn" aria-live="polite"></p>
+    <div class="row end"><button class="btn" value="close">Cancel</button><button class="btn btn-primary" type="button" id="folder-save">Use this folder</button></div>
+  </form>
+</dialog>
+<dialog id="tpl-picker" class="wide">
+  <form method="dialog" class="export">
+    <div class="row between"><h2>Choose a board template</h2><button class="btn" value="close">Cancel</button></div>
+    <p id="tpl-note" class="muted"></p>
+    <div id="tpl-grid" class="tpl-grid"></div>
+  </form>
+</dialog>
+<dialog id="theme">
+  <form method="dialog" class="export">
+    <h2>This event's theme</h2>
+    <p class="muted">Slides use these colours by role, so changing one restyles every slide in the event. New events start from your team theme in Settings.</p>
+    <p class="row between"><span id="theme-source" class="muted" aria-live="polite"></span><button class="btn" type="button" id="theme-reset">Reset to team theme</button></p>
+    <div class="grid" id="theme-colours"></div>
+    <div class="lbl">Logo
+      <span class="row"><span class="logo-box"><img id="theme-logo" alt="Event logo" hidden></span><span class="muted">The team logo from Settings. A card can show a different picture instead.</span></span></div>
+    <p id="theme-status" class="warn" aria-live="polite"></p>
+    <div class="row end"><button class="btn" value="close">Close</button><button class="btn btn-primary" type="button" id="theme-save">Save</button></div>
+  </form>
+</dialog>
+<dialog id="versions">
+  <form method="dialog" class="export">
+    <h2>Versions</h2>
+    <p class="muted">A copy of the event is kept each time you export (the last 20). Restoring one can be undone.</p>
+    <ol id="version-list" class="version-list"></ol>
+    <div class="row end"><button class="btn" value="close">Close</button></div>
+  </form>
+</dialog>
+<dialog id="copy">
+  <form method="dialog" class="export">
+    <h2>Copy to another loop</h2>
+    <p class="muted">A copy goes at the end of that loop. The two are separate slides: changing one leaves the other as it is.</p>
+    <label class="lbl">Copy it to<select id="copy-target" class="field"></select></label>
+    <div class="row end"><button class="btn" value="close">Cancel</button><button class="btn btn-primary" type="button" id="copy-go">Copy</button></div>
+  </form>
+</dialog>
+<input type="file" id="picker" accept="image/png,image/jpeg,image/webp" hidden>
+<script src="/static/common.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>

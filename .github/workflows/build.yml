@@ -1,0 +1,112 @@
+# Build Loop Builder for Mac and Windows. Tags like v0.1.0 also publish a GitHub Release.
+# Signing is optional: it runs only when the named secrets exist in the repository settings.
+name: build
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      HAS_MAC_CERT: ${{ secrets.MAC_CERT_P12 != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+
+      - name: Check the tag matches the app version
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          VERSION="$(python packaging/version.py)"
+          [ "v$VERSION" = "${GITHUB_REF_NAME}" ] || { echo "tag ${GITHUB_REF_NAME} != v$VERSION in packaging/version.py"; exit 1; }
+
+      - name: Tests
+        run: python -m pytest -q
+
+      - name: Build the app (PyInstaller)
+        run: pyinstaller packaging/loopbuilder.spec --noconfirm
+
+      # ---- Mac ----
+      - name: Import the signing certificate (Mac)
+        if: runner.os == 'macOS' && env.HAS_MAC_CERT == 'true'
+        env:
+          MAC_CERT_P12: ${{ secrets.MAC_CERT_P12 }}
+          MAC_CERT_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
+        run: |
+          echo "$MAC_CERT_P12" | base64 --decode > cert.p12
+          security create-keychain -p ci build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p ci build.keychain
+          security import cert.p12 -k build.keychain -P "$MAC_CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k ci build.keychain
+          rm cert.p12
+
+      - name: Make the .dmg (Mac)
+        if: runner.os == 'macOS'
+        env:
+          APPLE_SIGN_IDENTITY: ${{ secrets.APPLE_SIGN_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: packaging/mac/make_dmg.sh dist out
+
+      # ---- Windows ----
+      - name: Get the WebView2 bootstrapper (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/p/?LinkId=2124703" -OutFile packaging/windows/MicrosoftEdgeWebview2Setup.exe
+
+      - name: Make the installer (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          WINDOWS_SIGN_COMMAND: ${{ secrets.WINDOWS_SIGN_COMMAND }}
+        run: |
+          $version = (python packaging/version.py).Trim()
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress; $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" }
+          $isccArgs = @("/DAppVersion=$version", "/DDistDir=$PWD\dist", "/DOutDir=$PWD\out")
+          if ($env:WINDOWS_SIGN_COMMAND) { $isccArgs += @("/DSign", "/Ssigntool=$env:WINDOWS_SIGN_COMMAND") }
+          & $iscc @isccArgs packaging\windows\loopbuilder.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Make the portable zip (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: packaging/windows/make_portable.ps1 -Dist dist -Out out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: loop-builder-${{ runner.os }}
+          path: out/*
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: out/*
