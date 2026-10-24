@@ -26,10 +26,12 @@ def free_port():
 
 
 class NativeDialogs:
-    """The system's own folder and save pickers, offered to the page as window.pywebview.api."""
+    """The system's own folder and save pickers, and fitting the window to the screen, offered to the page
+    as window.pywebview.api."""
 
     def __init__(self):
         self._window = None  # private: pywebview exposes every public attribute to the page
+        self._fitted = False
 
     def _dialog(self, kind, **kwargs):
         import webview  # pylint: disable=import-outside-toplevel
@@ -46,22 +48,44 @@ class NativeDialogs:
     def save_file(self, name, start=""):
         return self._dialog("SAVE", directory=start or "", save_filename=name)
 
+    def fit_screen(self, left, top, width, height):
+        """Given the usable screen area the page measured, fit and centre the window if it spills over (once
+        per run). The page knows that area; only the app knows where its window is (webviews misreport it)."""
+        if self._fitted:
+            return
+        self._fitted = True
+        win = self._window
+        if spills((win.x, win.y, win.width, win.height), (left, top, width, height)):
+            x, y, w, h = fit_to(left, top, width, height)
+            win.resize(w, h)
+            win.move(x, y)
+
 
 WINDOW = (1440, 960)
-MIN_WINDOW = (900, 560)  # fits a 1080p screen at 150% scaling (1280 x 720 before the taskbar)
-SCREEN_MARGIN = 80  # the taskbar or Dock and the window's title bar
+MIN_WINDOW = (800, 500)
+SCREEN_SHARE = 0.92  # of the usable screen, so the window's edges and title bar stay on it
 
 
-def window_fit(screens):
-    """The window's size, smallest size and whether to open maximized. A window taller than the screen
-    hides the bottom of the page, and dialogs' buttons with it, so on a small screen it opens maximized:
-    that fills the screen without the taskbar, whatever the display scaling."""
+def fit_to(left, top, width, height):
+    """The window's place [x, y, width, height] in a usable screen area: the usual size if it fits,
+    else as much of the area as SCREEN_SHARE allows, centred. Any units, as long as all are the same."""
+    w, h = min(WINDOW[0], int(width * SCREEN_SHARE)), min(WINDOW[1], int(height * SCREEN_SHARE))
+    return left + (width - w) // 2, top + (height - h) // 2, w, h
+
+
+def spills(window, area):
+    """Whether a window [x, y, width, height] goes past a screen area [left, top, width, height]."""
+    x, y, w, h = window
+    left, top, width, height = area
+    return x < left or y < top or x + w > left + width or y + h > top + height
+
+
+def first_size(screens):
+    """A first guess at the window's size from pywebview's screen list; the page corrects it once it can
+    measure the usable screen (see fitWindow in common.js)."""
     if not screens:
-        return WINDOW, MIN_WINDOW, False
-    width, height = screens[0].width, screens[0].height - SCREEN_MARGIN
-    fits = WINDOW[0] <= width and WINDOW[1] <= height
-    smallest = (min(MIN_WINDOW[0], width), min(MIN_WINDOW[1], height))
-    return (WINDOW if fits else (min(WINDOW[0], width), min(WINDOW[1], height))), smallest, not fits
+        return WINDOW
+    return fit_to(0, 0, screens[0].width, screens[0].height)[2:]
 
 
 def ensure_streams():
@@ -108,9 +132,9 @@ def main():
         screens = webview.screens
     except Exception:  # pylint: disable=broad-except  # no screen list: the default size
         screens = []
-    (width, height), smallest, maximized = window_fit(screens)
+    width, height = first_size(screens)
     dialogs._window = webview.create_window(  # pylint: disable=protected-access
-        "Loop Builder", url, width=width, height=height, min_size=smallest, maximized=maximized, js_api=dialogs
+        "Loop Builder", url, width=width, height=height, min_size=MIN_WINDOW, js_api=dialogs
     )
     webview.start()
     server.should_exit = True
