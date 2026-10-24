@@ -55,7 +55,7 @@ async function loadEvent(keepEditor = false) {
   renderLoop();
   $("#undo").disabled = !state.event.can_undo;
   $("#redo").disabled = !state.event.can_redo;
-  $("#theme-offer").hidden = state.event.team_look || state.event.own_theme;
+  $("#theme-offer").hidden = !state.event.offer_team_theme;
   if (!keepEditor) selectSlide(Math.min(state.n, currentLoop().slides.length - 1));
   else markCurrent();
   loadChecks();
@@ -1007,19 +1007,19 @@ $("#offer-keep").addEventListener("click", async () => {
   flash("Keeping this event's theme");
 });
 
-// Settings from the editor. A new team logo is kept as soon as it's picked, so refresh on any close; a team
-// theme changed here is offered to this event even if it kept its own before.
-$("#open-settings").addEventListener("click", () => openSettings(() => flash("Settings saved")));
-$("#settings").addEventListener("close", async () => {
-  const found = await api("/api/templates");
-  state.templates = found.templates;
-  state.templateDetails = found.details || [];
-  state.teams = await api("/api/teams");
+// Settings from the editor: after a save or a new team logo, catch up with them (closing without changes doesn't).
+// Whether to offer the team theme comes from the server with the event.
+$("#open-settings").addEventListener("click", () => openSettings(async () => {
+  const [teams, home] = await Promise.all([api("/api/teams"), api("/api/home")]);
+  state.teams = teams;
+  state.settings = home.settings; // pool lanes and first lane for new lane slides
+  state.templatesFor = null; // the template folder may have changed
   state.stamp = Date.now();
   await loadEvent(true);
   renderEditor();
-  if (teamLookChanged && !state.event.team_look) $("#theme-offer").hidden = false;
-});
+  draw(slideUrl(state.loop, state.n, 3));
+  flash("Settings saved");
+}));
 $("#theme-save").addEventListener("click", async () => {
   const theme = Object.fromEntries(COLOURS.map(([k]) => [k, $(`#colour-${k}`).value.toUpperCase()]));
   try { await api("/api/theme", "PUT", { theme }); }

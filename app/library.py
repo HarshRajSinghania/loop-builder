@@ -7,6 +7,7 @@
 Set LOOPBUILDER_HOME to use another folder (tests do)."""
 
 import copy
+import hashlib
 import json
 import os
 import re
@@ -209,9 +210,12 @@ class Library:
         except (FileNotFoundError, json.JSONDecodeError):
             found = []
         added = [t for t in found if (self.teams_dir / t["logo"]).exists()]
-        name, logo = (self.settings().get("team") or "").strip(), self.team_logo()
-        home = [{"id": self.HOME_TEAM, "name": name, "logo": logo.name, "home": True}] if name and logo else []
-        return home + added
+        settings = self.settings()
+        name, logo = (settings.get("team") or "").strip(), self.team_logo(settings)
+        if not (name and logo):  # a name without a logo isn't a team on the board yet
+            return added
+        # "_home.png" in an event: an added team's file is "<id>.png" and an id never starts with "_"
+        return [{"id": self.HOME_TEAM, "name": name, "logo": f"{self.HOME_TEAM}{logo.suffix}", "home": True}] + added
 
     def team_logo_path(self, team):
         """The file of a team's logo: the home team's is the Settings logo."""
@@ -234,7 +238,9 @@ class Library:
         return team_id
 
     def rename_team(self, team_id, name):
-        teams = [t for t in self.teams() if not t.get("home")]  # the home team's name is in Settings
+        if team_id == self.HOME_TEAM:
+            raise LibraryError("your own team's name is set in Settings")
+        teams = [t for t in self.teams() if not t.get("home")]
         for t in teams:
             if t["id"] == team_id:
                 t["name"] = " ".join(str(name).split()) or t["name"]
@@ -296,10 +302,17 @@ class Library:
         """The team's colours (Settings → Team theme), with the defaults for any not chosen yet."""
         return {**{k: DEFAULT_THEME[k] for k in LOOK_COLOURS}, **self.settings().get("theme", {})}
 
-    def team_logo(self):
+    def team_logo(self, settings=None):
         """The team logo's file, or None."""
-        logo = self.settings().get("logo")
+        logo = (settings or self.settings()).get("logo")
         return self.root / logo if logo and (self.root / logo).exists() else None
+
+    def team_look_key(self):
+        """A short fingerprint of the team theme (colours and logo picture): an event that kept its own theme
+        stores it, so the editor offers the team theme again only once the team theme has changed."""
+        logo = self.team_logo()
+        data = json.dumps(self.team_look(), sort_keys=True).encode() + (logo.read_bytes() if logo else b"")
+        return hashlib.sha1(data, usedforsecurity=False).hexdigest()[:12]
 
     def copy_team_logo(self, event_folder):
         """Copy the team logo into an event's assets; returns its path in the event, or None."""

@@ -27,13 +27,11 @@ document.body.insertAdjacentHTML("beforeend", `
 
 let settingsHome = null; // /api/home when the dialog opened
 let settingsSaved = null;
-let teamLookChanged = false; // a new team logo or team colours since Settings opened
 const showLogo = () => { const img = $("#logo"); img.hidden = !settingsHome.settings.logo; if (settingsHome.settings.logo) img.src = `/api/team/logo?t=${Date.now()}`; };
 // Open Settings; `onSaved` runs after a save (and after a new team logo, which is kept straight away).
 async function openSettings(onSaved) {
   settingsHome = await api("/api/home");
   settingsSaved = onSaved;
-  teamLookChanged = false;
   const s = settingsHome.settings;
   $("#set-team").value = s.team || "";
   $("#set-templates").value = s.templates || "";
@@ -68,16 +66,15 @@ $("#logo-file").addEventListener("change", async (ev) => {
   const file = ev.target.files[0];
   ev.target.value = "";
   if (!file) return;
-  try { await upload("/api/settings/logo", file); settingsHome.settings.logo = true; teamLookChanged = true; showLogo(); previewLook(); }
-  catch (err) { $("#settings-status").textContent = err.message; }
+  try { await upload("/api/settings/logo", file); settingsHome.settings.logo = true; showLogo(); previewLook(); }
+  catch (err) { $("#settings-status").textContent = err.message; return; }
+  if (settingsSaved) await settingsSaved(); // the logo is kept straight away, so the page behind catches up now
 });
 $("#settings-save").addEventListener("click", async () => {
   try {
     await api("/api/settings", "PUT", { team: $("#set-team").value.trim(), templates: $("#set-templates").value.trim(),
       export_dir: $("#set-export").value.trim(), pool_lanes: Number($("#set-lanes").value), first_lane: Number($("#set-first").value),
       theme: teamLook() });
-    const before = settingsHome.settings.theme || {};
-    if (Object.entries(teamLook()).some(([k, v]) => v !== (before[k] || DEFAULTS[k]).toUpperCase())) teamLookChanged = true;
     $("#settings").close();
     if (settingsSaved) await settingsSaved();
   } catch (err) { $("#settings-status").textContent = err.message; }

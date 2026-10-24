@@ -86,7 +86,9 @@ def test_home_team_from_settings_leads_the_team_list(lib, tmp_path):
     slug = lib.create("Dual", "dual-meet")
     used = lib.use_team(home["id"], lib.event_file(slug).parent)
     assert (lib.event_file(slug).parent / used["logo"]).exists() and used["name"] == "Riverside Otters"
-    lib.rename_team(home["id"], "Someone else")  # its name lives in Settings
+    assert used["logo"] == "assets/teams/_home.png"  # never the same file as an added team's "<id>.png"
+    with pytest.raises(LibraryError):
+        lib.rename_team(home["id"], "Someone else")  # its name lives in Settings
     with pytest.raises(LibraryError):
         lib.delete_team(home["id"])
     assert [t["name"] for t in lib.teams()] == ["Riverside Otters", "Lakeview"]

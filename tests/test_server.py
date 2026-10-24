@@ -115,20 +115,39 @@ def test_reset_copies_the_team_logo_into_the_event(client):
     assert event["team_look"] and (path.parent / event["theme"]["logo"]).exists()
 
 
-def test_an_event_can_keep_its_own_theme(client):
+def test_an_event_can_keep_its_own_theme_until_the_team_theme_changes(client):
     api, _ = client
     api.put("/api/settings", json={"theme": {"primary": "#00AA00"}})
     event = api.get("/api/event").json()
-    assert not event["team_look"] and not event["own_theme"]  # the editor offers the team theme
+    assert not event["team_look"] and event["offer_team_theme"]  # the editor offers the team theme
     assert api.post("/api/theme/keep").status_code == 200
-    assert api.get("/api/event").json()["own_theme"]
+    assert not api.get("/api/event").json()["offer_team_theme"]
+    api.put("/api/settings", json={"team": "Riverside"})  # a change that isn't the team theme
+    assert not api.get("/api/event").json()["offer_team_theme"]
+    api.put("/api/settings", json={"theme": {"primary": "#0000AA"}})  # a new team theme: offered again
+    assert api.get("/api/event").json()["offer_team_theme"]
+    api.post("/api/theme/keep")
     api.post("/api/undo")
-    assert not api.get("/api/event").json()["own_theme"]
+    assert api.get("/api/event").json()["offer_team_theme"]
     api.put("/api/theme", json={"theme": {"accent": "#00FF00"}})  # colours of its own: kept on purpose
-    assert api.get("/api/event").json()["own_theme"]
+    assert not api.get("/api/event").json()["offer_team_theme"]
     api.post("/api/theme/reset")
     event = api.get("/api/event").json()
-    assert event["team_look"] and not event["own_theme"]
+    assert event["team_look"] and not event["offer_team_theme"]
+
+
+def test_saving_settings_keeps_the_open_event_undo_history(client, tmp_path):
+    api, _ = client
+    body = loop_body(api.get("/api/event").json(), 2)
+    body["hold"] = 7
+    api.put("/api/loops/2", json=body)
+    api.put("/api/settings", json={"team": "Riverside", "templates": ""})  # templates unchanged: sent as before
+    assert api.get("/api/event").json()["can_undo"]
+    folder = tmp_path / "Templates"
+    folder.mkdir()
+    api.put("/api/settings", json={"templates": str(folder)})  # a new folder: boards redrawn, undo kept
+    event = api.get("/api/event").json()
+    assert event["can_undo"] and event["templates_folder"] == str(folder)
 
 
 def test_settings_preview_draws_a_sample_card(client):
