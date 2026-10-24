@@ -368,14 +368,38 @@ def create_app(event_path=None, templates=None, library=None):
             raise HTTPException(404, "no team logo yet")
         return FileResponse(lib.root / logo, headers={"Cache-Control": "no-store"})
 
-    def matches_team_look(theme, event_folder):
-        """Whether an event still has the team theme: the same colours and the same logo picture."""
+    def home_lanes(data):
+        """The lanes in an event's lane slides that show the home team (its logo is assets/teams/_home.*)."""
+        for loop in data.get("loops") or []:
+            for slide in loop.get("slides") or []:
+                for lane in (slide.get("lanes") or {}).get("lanes") or [] if isinstance(slide, dict) else []:
+                    if isinstance(lane, dict) and Path(str(lane.get("logo") or "")).stem == lib.HOME_TEAM:
+                        yield lane
+
+    def look_key(data):
+        return lib.team_look_key(with_name=any(home_lanes(data)))
+
+    def same_name(shown, team):
+        """A lane's name is the team's if only case, spacing or a | line break differ (RIVERSIDE|OTTERS)."""
+        return " ".join(str(shown or "").replace("|", " ").split()).upper() == " ".join(team.split()).upper()
+
+    def matches_team_look(data, event_folder):
+        """Whether an event still has the team theme: the same colours and logo picture, and the home team's
+        lanes show the team's name and logo from Settings."""
+        theme = data.get("theme") or {}
         colours = {k: str(theme.get(k) or DEFAULT_THEME[k]).upper() for k in LOOK_COLOURS}
         if colours != {k: v.upper() for k, v in lib.team_look().items()}:
             return False
-        logo, team = theme.get("logo"), lib.team_logo()
+        team, name = lib.team_logo(), (lib.settings().get("team") or "").strip()
+        for lane in home_lanes(data):
+            picture = event_folder / lane["logo"]
+            if not same_name(lane.get("name"), name) or not (
+                team and picture.exists() and filecmp.cmp(picture, team, shallow=False)
+            ):
+                return False
         if team is None:  # no team logo yet: the look is just the colours
             return True
+        logo = theme.get("logo")
         return bool(logo) and (event_folder / logo).exists() and filecmp.cmp(event_folder / logo, team, shallow=False)
 
     def library_call(fn, *args):
@@ -477,12 +501,12 @@ def create_app(event_path=None, templates=None, library=None):
                 props = next(iter(sl["raw"].values())) or {}
                 key = props.get("ref") or props.get("id")
                 sl["linked"] = uses.get(key, 0) if key and uses.get(key, 0) > 1 else 0
-        team_look = matches_team_look(s.data.get("theme") or {}, s.path.parent)
+        team_look = matches_team_look(s.data, s.path.parent)
         return {
             "theme": s.data.get("theme") or {},
             "team_look": team_look,
             # offer the team theme unless the event has it, or kept its own while the team theme was as it is now
-            "offer_team_theme": not team_look and s.data.get("own_theme") != lib.team_look_key(),
+            "offer_team_theme": not team_look and s.data.get("own_theme") != look_key(s.data),
             "panels": s.event.panels,
             "templates_folder": str(s.event.templates),
             "templates_found": s.event.templates.is_dir(),
@@ -603,22 +627,25 @@ def create_app(event_path=None, templates=None, library=None):
     def save_theme(body: ThemeBody):
         colours = look_colours(body.theme)
         with s.lock:
-            key = lib.team_look_key()
+            key = look_key(s.data)
             s.change(lambda d: d.update(theme={**(d.get("theme") or {}), **colours}, own_theme=key))
         return {"ok": True}
 
     @app.post("/api/theme/keep")
     def keep_theme():
         """Keep the open event's theme though it differs from the team theme as it is now (undoable)."""
-        key = lib.team_look_key()
+        key = look_key(s.data)
         with s.lock:
             s.change(lambda d: d.__setitem__("own_theme", key))
         return {"ok": True}
 
     @app.post("/api/theme/reset")
     def reset_theme():
-        """Give the open event the team theme again: its colours and a fresh copy of the team logo (undoable)."""
+        """Give the open event the team theme again: its colours and a fresh copy of the team logo, and the
+        team's name and logo in the home team's lanes (undoable)."""
         logo = lib.copy_team_logo(s.path.parent)
+        home = next((t for t in lib.teams() if t.get("home")), None)
+        used = lib.use_team(home["id"], s.path.parent) if home and any(home_lanes(s.data)) else None
 
         def edit(d):
             theme = {**(d.get("theme") or {}), **lib.team_look()}
@@ -626,6 +653,10 @@ def create_app(event_path=None, templates=None, library=None):
                 theme["logo"] = logo
             d["theme"] = theme
             d.pop("own_theme", None)
+            for lane in home_lanes(d) if used else []:
+                lane["logo"] = used["logo"]
+                if not same_name(lane.get("name"), used["name"]):  # keeps a | break the name already has
+                    lane["name"] = used["name"]
 
         with s.lock:
             s.change(edit)

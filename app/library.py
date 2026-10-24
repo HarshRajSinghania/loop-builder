@@ -307,11 +307,13 @@ class Library:
         logo = (settings or self.settings()).get("logo")
         return self.root / logo if logo and (self.root / logo).exists() else None
 
-    def team_look_key(self):
-        """A short fingerprint of the team theme (colours and logo picture): an event that kept its own theme
-        stores it, so the editor offers the team theme again only once the team theme has changed."""
+    def team_look_key(self, with_name=False):
+        """A short fingerprint of the team theme (colours and logo picture, and the team name for an event whose
+        lanes show the home team): an event that kept its own theme stores it, so the editor offers the team
+        theme again only once the team theme has changed."""
         logo = self.team_logo()
-        data = json.dumps(self.team_look(), sort_keys=True).encode() + (logo.read_bytes() if logo else b"")
+        look = {**self.team_look(), **({"team": (self.settings().get("team") or "").strip()} if with_name else {})}
+        data = json.dumps(look, sort_keys=True).encode() + (logo.read_bytes() if logo else b"")
         return hashlib.sha1(data, usedforsecurity=False).hexdigest()[:12]
 
     def copy_team_logo(self, event_folder):
