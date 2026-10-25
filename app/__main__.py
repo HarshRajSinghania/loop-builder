@@ -60,6 +60,16 @@ def ensure_streams():
     return log
 
 
+def window_size(screens, size=(1440, 960), least=(1024, 700)):
+    """The window's size and minimum size, in logical pixels: the usual size where it fits, else the screen less
+    room for the taskbar or menu bar and dock, so the whole window shows on a small or scaled-up screen."""
+    if not screens:
+        return size, least
+    room = (screens[0].width - 64, screens[0].height - 120)
+    fit = tuple(min(want, have) for want, have in zip(size, room))
+    return fit, tuple(min(want, have) for want, have in zip(least, fit))
+
+
 def main():
     ensure_streams()
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -87,8 +97,19 @@ def main():
     while not server.started and time.monotonic() < deadline:  # open the window only once the page can load
         time.sleep(0.05)
     dialogs = NativeDialogs()
+    try:
+        screens = webview.screens
+    except Exception:  # pylint: disable=broad-except  # no screen list: open at the usual size
+        screens = []
+    (width, height), least = window_size(screens)
     dialogs._window = webview.create_window(  # pylint: disable=protected-access
-        "Loop Builder", url, width=1440, height=960, min_size=(1024, 700), js_api=dialogs
+        "Loop Builder",
+        url,
+        width=width,
+        height=height,
+        min_size=least,
+        js_api=dialogs,
+        screen=screens[0] if screens else None,  # centred on it: Windows' own placement can run off the edge
     )
     webview.start()
     server.should_exit = True
