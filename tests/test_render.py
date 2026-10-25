@@ -8,6 +8,7 @@ import zxingcpp
 from PIL import Image
 
 from loopgen import export_loop, export_pngs, load_event, render_slide, run_checks
+from loopgen.loops import existing_exports
 from loopgen.slides import Renderer
 from loopgen.uploads import prepare_upload, shrink
 
@@ -34,6 +35,20 @@ def test_one_card_loop_exports_ten_seconds_of_wmv2(event, tmp_path):
         assert stream.codec_context.name == "wmv2"
         assert (stream.width, stream.height) == (320, 176)
         assert round(float(container.duration / av.time_base)) == 10
+
+
+def test_a_loop_name_with_slashes_and_colons_still_exports(tmp_path):
+    event_file = tmp_path / "names.yaml"
+    event_file.write_text(
+        "event: Names\nloops:\n  - name: 'Raffle: 10/12'\n    slides:\n"
+        "      - card: {layout: stack, lines: [{text: RAFFLE, size: L}]}\n",
+        encoding="utf-8",
+    )
+    event = load_event(event_file)
+    loop = event.loop("Raffle: 10/12")
+    wmv, mp4 = export_loop(event, loop, tmp_path / "out", preview_mp4=True)
+    assert (wmv.name, mp4.name) == ("Raffle- 10-12.wmv", "Raffle- 10-12 (preview).mp4") and wmv.is_file()
+    assert existing_exports(loop, tmp_path / "out", preview_mp4=True) == [wmv, mp4]  # the replace check finds them
 
 
 def test_qr_slide_decodes(tmp_path):

@@ -93,7 +93,6 @@ class Session:
             raise HTTPException(422, str(exc)) from exc
 
 
-THEME_KEYS = ("primary", "accent", "text", "muted", "background", "logo", "font")
 HEX = re.compile(r"#[0-9A-Fa-f]{6}")
 
 
@@ -104,6 +103,14 @@ def legal_text(name):
         if path.exists():
             return path.read_text(encoding="utf-8")
     return ""
+
+
+def template_folder_status(folder):
+    """Whether a DisplayLink Plus template folder (as typed, ~ allowed) exists, and how many .tpl files it holds:
+    {"found", "count"}. The one check behind Settings' live count, the events home and the editor."""
+    path = Path(str(folder or "").strip()).expanduser() if str(folder or "").strip() else None
+    found = bool(path) and path.is_dir()
+    return {"found": found, "count": sum(1 for _ in path.rglob("*.tpl")) if found else 0}
 
 
 def look_colours(theme):

@@ -9,15 +9,15 @@ from fastapi import Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response
 
 from loopgen import load_event
-from loopgen.event import EventError
+from loopgen.event import DEFAULT_THEME, Event, EventError, Loop, _slide
 from loopgen.loops import render_slide
-from loopgen.slides import MissingAsset
+from loopgen.slides import MissingAsset, Renderer
 from loopgen.uploads import UploadError, prepare_upload
 
 from app.library import STARTERS, LibraryError
 from app.version import COPYRIGHT, PROJECT_URL, RELEASES_URL, VERSION
-from app.api.state import legal_text, look_colours, png
-from app.api.models import NewEventBody, PathBody, SavePictureBody, SettingsBody
+from app.api.state import legal_text, look_colours, png, template_folder_status
+from app.api.models import LookBody, NewEventBody, PathBody, SavePictureBody, SettingsBody
 
 
 def register(app, ctx):
@@ -37,15 +37,12 @@ def register(app, ctx):
     @app.get("/api/home")
     def home():
         settings = lib.settings()
+        folder = template_folder_status(settings["templates"])  # the check Settings makes as a folder is typed
         return {
             "settings": {k: settings[k] for k in ("team", "templates", "export_dir", "pool_lanes", "first_lane")}
             | {"logo": bool(settings["logo"]), "theme": lib.team_look()},
-            "templates_found": bool(settings["templates"]) and Path(settings["templates"]).is_dir(),
-            "template_count": (
-                sum(1 for _ in Path(settings["templates"]).rglob("*.tpl"))
-                if settings["templates"] and Path(settings["templates"]).is_dir()
-                else 0
-            ),
+            "templates_found": folder["found"],
+            "template_count": folder["count"],
             "events": lib.events(),
             "starters": [{"id": k, "title": v["title"], "about": v["about"]} for k, v in STARTERS.items()],
             "open": current.session.path.parent.name if current.session else None,
@@ -81,6 +78,31 @@ def register(app, ctx):
             with current.session.lock:
                 current.session.reload()  # redraw boards from the new folder; undo history stays
         return settings
+
+    @app.post("/api/settings/preview")
+    def preview_look(body: LookBody):
+        """A sample welcome card in some colours and the team logo, drawn by the real renderer."""
+        logo = lib.team_logo()
+        theme = {**DEFAULT_THEME, **lib.team_look(), **look_colours(body.theme), "logo": str(logo) if logo else None}
+        card = _slide(
+            {
+                "card": {
+                    "layout": "logo-center" if logo else "stack",
+                    "lines": [
+                        {"text": "Welcome", "size": "M", "style": "outlined"},
+                        {"text": "VISITING TEAM", "size": "L", "style": "outlined"},
+                        {"text": "Thanks for swimming with us!", "size": "S"},
+                    ],
+                }
+            },
+            "preview",
+        )
+        event = Event("Preview", lib.root / "preview.yaml", 320, 176, theme, [], lib.root)
+        try:
+            img = render_slide(event, Loop("Preview", [card]), 0, None, Renderer(event))
+        except (MissingAsset, ValueError, KeyError) as exc:
+            raise HTTPException(422, str(exc)) from exc
+        return Response(png(img, 2), media_type="image/png", headers={"Cache-Control": "no-store"})
 
     @app.post("/api/settings/logo")
     def team_logo(file: UploadFile):

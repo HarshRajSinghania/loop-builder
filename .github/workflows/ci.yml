@@ -44,5 +44,5 @@ jobs:
       - name: Lint
         if: runner.os == 'Linux'
         run: |
-          python -m pylint app tests
-          python -m pylint --errors-only loopgen packaging/*.py
+          python -m black --check loopgen app tests packaging
+          python -m pylint loopgen app tests packaging/*.py

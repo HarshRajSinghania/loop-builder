@@ -28,6 +28,8 @@ class EventError(ValueError):
 
 @dataclass
 class Slide:
+    """One slide: its type (card, lanes, countdown…), its own settings, and the hold, fade and id any slide may set."""
+
     type: str
     props: dict
     id: str = None
@@ -43,6 +45,8 @@ class Slide:
 
 @dataclass
 class Loop:
+    """A named run of slides, exported as one video."""
+
     name: str
     slides: list
     hold: float = 10.0
@@ -52,6 +56,8 @@ class Loop:
 
 @dataclass
 class Event:
+    """An event file, read: its loops, board size, theme and template folder."""
+
     name: str
     path: Path
     width: int

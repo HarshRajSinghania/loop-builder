@@ -6,26 +6,34 @@ from dataclasses import dataclass
 
 
 class FormatError(ValueError):
-    pass
+    """Data this reader doesn't understand."""
 
 
 @dataclass
 class Reference:
+    """A pointer to an object recorded elsewhere in the stream."""
+
     object_id: int
 
 
 @dataclass
 class NullRun:
+    """A run of empty array entries."""
+
     count: int
 
 
 @dataclass
 class Object:
+    """A serialized .NET object: its class name and member values."""
+
     class_name: str
     members: dict
 
 
 class Reader:
+    """Reads NRBF records from bytes into References, NullRuns, Objects and plain values."""
+
     def __init__(self, data):
         self.stream = io.BytesIO(data)
         self.objects = {}
@@ -89,7 +97,7 @@ class Reader:
             first = self.read(1)
             size = 1 if first[0] < 128 else (2 if first[0] < 224 else 3 if first[0] < 240 else 4)
             return (first + self.read(size - 1)).decode("utf-8")
-        raise FormatError("Unsupported primitive type: %s" % kind)
+        raise FormatError(f"Unsupported primitive type: {kind}")
 
     def type_info(self, kind):
         if kind in (0, 7):
@@ -100,7 +108,7 @@ class Reader:
             return (self.string(), self.number("i"))
         if kind in (1, 2, 5, 6):
             return None
-        raise FormatError("Unknown binary type: %s" % kind)
+        raise FormatError(f"Unknown binary type: {kind}")
 
     def value(self):
         while True:
@@ -148,7 +156,7 @@ class Reader:
             object_id = self.number("i")
             metadata_id = self.number("i")
             if metadata_id not in self.classes:
-                raise FormatError("Missing class metadata: %s" % metadata_id)
+                raise FormatError(f"Missing class metadata: {metadata_id}")
             return self.members(object_id, self.classes[metadata_id])
         if kind in (2, 3, 4, 5):
             object_id = self.number("i")
@@ -205,7 +213,7 @@ class Reader:
             value = self.array_values(size, element_type, info)
             self.objects[object_id] = value
             return value
-        raise FormatError("Unsupported NRBF record %s at offset %s" % (kind, self.stream.tell() - 1))
+        raise FormatError(f"Unsupported NRBF record {kind} at offset {self.stream.tell() - 1}")
 
     def parse(self):
         if self.number("B") != 0:
@@ -221,7 +229,7 @@ class Reader:
         seen = set()
         while isinstance(value, Reference):
             if value.object_id in seen or value.object_id not in self.objects:
-                raise FormatError("Invalid object reference: %s" % value.object_id)
+                raise FormatError(f"Invalid object reference: {value.object_id}")
             seen.add(value.object_id)
             value = self.objects[value.object_id]
         return value

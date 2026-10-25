@@ -12,18 +12,17 @@ from fastapi.responses import FileResponse, Response
 
 from loopgen import run_checks, slide_label
 from loopgen import tpl
-from loopgen.event import DEFAULT_THEME, Event, EventError, Loop, _slide
+from loopgen.event import EventError, _slide
 from loopgen.loops import build_clips, loop_length, render_slide
-from loopgen.slides import MissingAsset, Renderer
+from loopgen.slides import MissingAsset
 from loopgen.uploads import UploadError, prepare_upload
 
 from app.library import apply_visitor
-from app.api.state import look_colours, png, qr_status
+from app.api.state import look_colours, png, qr_status, template_folder_status
 from app.api.models import (
     CopyBody,
     DetailsBody,
     FolderBody,
-    LookBody,
     LoopBody,
     PanelBody,
     SlideBody,
@@ -283,31 +282,6 @@ def register(app, ctx):
             s.change(edit)
         return {"ok": True}
 
-    @app.post("/api/settings/preview")
-    def preview_look(body: LookBody):
-        """A sample welcome card in some colours and the team logo, drawn by the real renderer."""
-        logo = lib.team_logo()
-        theme = {**DEFAULT_THEME, **lib.team_look(), **look_colours(body.theme), "logo": str(logo) if logo else None}
-        card = _slide(
-            {
-                "card": {
-                    "layout": "logo-center" if logo else "stack",
-                    "lines": [
-                        {"text": "Welcome", "size": "M", "style": "outlined"},
-                        {"text": "VISITING TEAM", "size": "L", "style": "outlined"},
-                        {"text": "Thanks for swimming with us!", "size": "S"},
-                    ],
-                }
-            },
-            "preview",
-        )
-        event = Event("Preview", lib.root / "preview.yaml", 320, 176, theme, [], lib.root)
-        try:
-            img = render_slide(event, Loop("Preview", [card]), 0, None, Renderer(event))
-        except (MissingAsset, ValueError, KeyError) as exc:
-            raise HTTPException(422, str(exc)) from exc
-        return Response(png(img, 2), media_type="image/png", headers={"Cache-Control": "no-store"})
-
     @app.get("/api/theme/logo")
     def event_logo_file():
         logo = (s.data.get("theme") or {}).get("logo")
@@ -391,9 +365,7 @@ def register(app, ctx):
     @app.get("/api/templates/count")
     def count_templates(folder: str = ""):
         """How many .tpl files a folder holds, for Settings to say so as a folder is typed or picked."""
-        path = Path(folder.strip()).expanduser() if folder.strip() else None
-        found = bool(path) and path.is_dir()
-        return {"found": found, "count": sum(1 for _ in path.rglob("*.tpl")) if found else 0}
+        return template_folder_status(folder)
 
     @app.get("/api/templates")
     def list_templates():
@@ -438,7 +410,8 @@ def register(app, ctx):
             src = Path(tmp) / Path(file.filename or "picture").name
             src.write_bytes(file.file.read())
             try:
-                stored = prepare_upload(src, assets)
+                # replace=False: another poster.png mustn't change the slides already using this one
+                stored = prepare_upload(src, assets, replace=False)
             except UploadError as exc:
                 raise HTTPException(422, str(exc)) from exc
         return {"file": f"assets/{stored.name}", "bytes": stored.stat().st_size}

@@ -70,8 +70,7 @@ def export_loop(event, loop, out_dir, preview_mp4=False, renderer=None, progress
     clips = build_clips(renderer, loop)
     total = max(1, loop_length(renderer, loop, clips))
     bitrate = 1_000_000 if any(c.timed for c in clips) else 2_000_000
-    wmv = out_dir / f"{loop.name}.wmv"
-    mp4 = out_dir / f"{loop.name} (preview).mp4"
+    wmv, mp4 = _video_files(loop, out_dir)
     outputs = [(av.open(str(wmv), "w"), "wmv2", 1, bitrate)]
     if preview_mp4:
         outputs.append((av.open(str(mp4), "w"), "libx264", 4, None))
@@ -127,10 +126,20 @@ def slide_label(slide):
     return slide.type
 
 
+_NOT_IN_FILE_NAMES = '\\/:*?"<>|'  # on Windows; a Mac takes all but / and :
+
+
 def _file_safe(text):
     """Text usable in a file name on Windows and Mac."""
-    cleaned = "".join("-" if c in '\\/:*?"<>|' else c for c in text).strip(" .")
+    cleaned = "".join("-" if c in _NOT_IN_FILE_NAMES else c for c in text).strip(" .")
     return " ".join(cleaned.split())[:60] or "slide"
+
+
+def _video_files(loop, out_dir):
+    """The WMV and review MP4 for `loop`: named after it, with any character a file name can't hold made a dash
+    ("Raffle: 10/12" → "Raffle- 10-12.wmv"). Not shortened, so a WMV the scoreboard already plays keeps its name."""
+    name = "".join("-" if c in _NOT_IN_FILE_NAMES else c for c in loop.name).strip(" .") or "loop"
+    return out_dir / f"{name}.wmv", out_dir / f"{name} (preview).mp4"
 
 
 def existing_exports(loop, out_dir, formats=("wmv",), preview_mp4=False):
@@ -140,10 +149,11 @@ def existing_exports(loop, out_dir, formats=("wmv",), preview_mp4=False):
     if not out_dir.is_dir():
         return []
     found = []
+    wmv, mp4 = _video_files(loop, out_dir)
     if "wmv" in formats or preview_mp4:
-        found.append(out_dir / f"{loop.name}.wmv")
+        found.append(wmv)
     if preview_mp4:
-        found.append(out_dir / f"{loop.name} (preview).mp4")
+        found.append(mp4)
     if "png" in formats:
         found += sorted(out_dir.glob(f"{glob.escape(_file_safe(loop.name))} [0-9][0-9] - *.png"))
     return [p for p in found if p.is_file()]
