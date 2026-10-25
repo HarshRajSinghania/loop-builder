@@ -1,4 +1,4 @@
-Pillow>=11,<12
+Pillow>=13.0.0,<14
 qrcode>=8.2,<9
 zxing-cpp>=2.3,<3
 PyYAML>=6.0,<7
