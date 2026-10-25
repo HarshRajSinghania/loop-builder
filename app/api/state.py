@@ -177,6 +177,14 @@ class Context:
     def open_event(self, path):
         self.current.session = Session(path, self.folder_override, lambda: self.lib.settings().get("templates"))
 
+    def event_file_path(self, path):
+        """A file inside the open event's folder, never outside it."""
+        root = self.s.path.parent.resolve()
+        target = (root / path).resolve()
+        if root not in target.parents or not target.is_file():
+            raise HTTPException(404, "no such picture in this event")
+        return target
+
     def home_lanes(self, data):
         """The lanes in an event's lane slides that show the home team (its logo is assets/teams/_home.*)."""
         for loop in data.get("loops") or []:

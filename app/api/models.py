@@ -32,6 +32,13 @@ class SettingsBody(BaseModel):
     theme: dict | None = None  # the team theme: colours only (the logo has its own upload)
 
 
+class SavePictureBody(BaseModel):
+    """A picture already in the open event, to keep in Pictures under a name."""
+
+    path: str
+    name: str
+
+
 class NewEventBody(BaseModel):
     """A new event from a starter, or a copy of an existing one."""
 

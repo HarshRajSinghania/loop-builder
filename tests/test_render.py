@@ -89,17 +89,18 @@ def test_switching_layouts_never_breaks_a_card(tmp_path):
         "event: Layouts\nloops:\n  - name: L\n    slides:\n"
         + "".join(
             f"      - card: {{layout: {lay}, picture: none, lines: {lines}}}\n"
-            for lay in ("stack", "logo-center", "text-qr", "banner")
+            for lay in ("stack", "logo-center", "text-qr", "banner", "text-picture")
         ),
         encoding="utf-8",
     )
     event = load_event(event_file)
-    for i in range(4):
+    for i in range(5):
         assert render_slide(event, event.loops[0], i).size == (320, 176)
     found = [(i.slide, i.level, i.message) for i in run_checks(event)]
     assert any(s == 3 and "needs a QR link" in m for s, _, m in found)  # Text + QR without a link: drawn, flagged
     assert any(s == 3 and lvl == "error" for s, lvl, _ in found)  # ...and export stays blocked until it has one
     assert any(s == 4 and "kept but hidden" in m for s, _, m in found)  # Banner hides lines 3-4 without losing them
+    assert any(s == 5 and "needs a picture" in m for s, _, m in found)  # Text + picture without one: drawn, flagged
 
 
 def test_text_qr_can_show_its_link_and_warns_when_it_is_too_long(tmp_path):
@@ -302,6 +303,70 @@ def test_a_placeholder_team_name_blocks_an_export_until_it_is_typed_over(tmp_pat
         (1, "still says “VISITING TEAM”: type the team’s name over it"),
         (2, "still says “team name”: type the team’s name over it"),
     ]
+
+
+def _yellow(img):
+    """The bounding box of the test picture's yellow on the board (the text is blue), or None."""
+    mask = Image.new("L", img.size, 0)
+    pixels = img.convert("RGB").get_flattened_data()
+    mask.putdata([255 if (r > 200 and g > 180 and b < 100) else 0 for r, g, b in pixels])
+    return mask.getbbox()
+
+
+def test_a_card_picture_sits_where_it_is_placed_in_any_layout(tmp_path):
+    (tmp_path / "assets").mkdir()
+    Image.new("RGBA", (60, 60), (255, 220, 0, 255)).save(tmp_path / "assets" / "duck.png")
+    lines = "[{text: CHUCK A DUCK, size: L}, {text: Practice}]"
+    slides = [
+        "{layout: stack, picture: assets/duck.png, picture_place: above, bars: none, lines: %s}",
+        "{layout: stack, picture: assets/duck.png, picture_place: below, bars: none, lines: %s}",
+        "{layout: text-picture, picture: assets/duck.png, bars: none, lines: %s}",
+        "{layout: text-picture, picture: assets/duck.png, picture_side: left, bars: none, lines: %s}",
+        "{layout: text-qr, qr: 'https://example.org/give', picture: assets/duck.png, bars: none, lines: %s}",
+        "{layout: stack, bars: none, lines: %s}",  # no picture key: a stack card shows none, as before
+    ]
+    event_file = tmp_path / "event.yaml"
+    event_file.write_text(
+        "event: Places\ntheme: {text: '#0000FF', muted: '#0000FF', primary: '#0000FF', background: '#000000'}\n"
+        "loops:\n  - name: P\n    slides:\n" + "".join(f"      - card: {s % lines}\n" for s in slides),
+        encoding="utf-8",
+    )
+    event = load_event(event_file)
+    above, below, right, left, beside_qr, none = (_yellow(render_slide(event, event.loops[0], i)) for i in range(6))
+    assert above[1] < 40 and below[3] > 136  # top of the board / bottom of the board
+    assert left[2] < 160 < right[0]  # beside the lines, on the side asked for
+    assert right[3] - right[1] > 100  # Text + picture's picture is big: most of the board's height
+    assert beside_qr[2] < 320 - 100  # in the lines' column, left of the QR code
+    assert none is None
+    assert not [i for i in run_checks(event) if i.level == "error"]
+
+
+def test_extra_pictures_go_over_any_slide_where_placed(tmp_path):
+    (tmp_path / "assets").mkdir()
+    Image.new("RGBA", (40, 20), (255, 220, 0, 255)).save(tmp_path / "assets" / "badge.png")
+    event_file = tmp_path / "event.yaml"
+    event_file.write_text(
+        "event: Extras\ntheme: {text: '#0000FF', muted: '#0000FF', primary: '#0000FF', background: '#000000'}\n"
+        "loops:\n  - name: X\n    slides:\n"
+        "      - card: {id: c, bars: none, lines: [{text: HI}], badges: ["
+        "{file: assets/badge.png, place: top-left, size: S}, {file: assets/badge.png, place: bottom-right, size: L}]}\n"
+        "      - countdown: {length: '0:03', badges: [{file: assets/badge.png, place: center}]}\n"
+        "      - card: {ref: c}\n"
+        "      - card: {lines: [{text: HI}], badges: [{file: assets/missing.png}]}\n",
+        encoding="utf-8",
+    )
+    event = load_event(event_file)
+    loop = event.loops[0]
+    card = render_slide(event, loop, 0).convert("RGB")
+    assert card.getpixel((6 + 10, 6 + 5))[:2] == (255, 220)  # S: 24 px tall, 6 px in from the top left
+    assert card.getpixel((320 - 6 - 50, 176 - 6 - 13))[:2] == (255, 220)  # L: 52 px tall (104 wide), bottom right
+    assert card.getpixel((160, 88))[:2] != (255, 220)
+    for at in (0, 1.0, 2.5):  # on every frame of a moving slide
+        assert render_slide(event, loop, 1, at=at).convert("RGB").getpixel((160, 88))[:2] == (255, 220)
+    assert render_slide(event, loop, 2).tobytes() == render_slide(event, loop, 0).tobytes()  # a linked slide too
+    found = [(i.slide, i.message) for i in run_checks(event)]
+    assert any(s == 4 and "extra picture not found" in m for s, m in found)
+    assert render_slide(event, loop, 3).size == (320, 176)  # drawn without it
 
 
 def test_a_qr_slide_without_a_full_link_shows_where_its_code_will_go(tmp_path):

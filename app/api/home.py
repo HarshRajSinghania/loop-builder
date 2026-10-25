@@ -1,4 +1,4 @@
-"""The events home, Settings and Teams: creating, opening, importing and deleting events."""
+"""The events home, Settings, Teams and Pictures: creating, opening, importing and deleting events."""
 
 import tempfile
 import zipfile
@@ -17,12 +17,12 @@ from loopgen.uploads import UploadError, prepare_upload
 from app.library import STARTERS, LibraryError
 from app.version import COPYRIGHT, PROJECT_URL, RELEASES_URL, VERSION
 from app.api.state import legal_text, look_colours, png
-from app.api.models import NewEventBody, PathBody, SettingsBody
+from app.api.models import NewEventBody, PathBody, SavePictureBody, SettingsBody
 
 
 def register(app, ctx):
-    """The events home's routes, Settings' and the team library's."""
-    s, lib, current, jobs, update, folder_override, open_event, library_call = (
+    """The events home's routes, Settings', and the team and picture libraries'."""
+    s, lib, current, jobs, update, folder_override, open_event, library_call, event_file_path = (
         ctx.s,
         ctx.lib,
         ctx.current,
@@ -31,6 +31,7 @@ def register(app, ctx):
         ctx.folder_override,
         ctx.open_event,
         ctx.library_call,
+        ctx.event_file_path,
     )
 
     @app.get("/api/home")
@@ -128,6 +129,53 @@ def register(app, ctx):
     def use_team(team_id: str):
         """Copy a team's logo into the open event, for a lane; returns the lane's name and logo path."""
         return library_call(lib.use_team, team_id, s.path.parent)
+
+    # Pictures kept for every event (badges, league logos, the duck). Not /api/pictures: that's an event upload.
+    @app.get("/api/library/pictures")
+    def list_pictures():
+        return lib.pictures()
+
+    @app.post("/api/library/pictures")
+    def save_picture(file: UploadFile, name: str = Form(...), trim: bool = Form(False)):
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / Path(file.filename or "picture").name
+            src.write_bytes(file.file.read())
+            try:
+                return {"id": lib.add_picture(name, src, trim)}
+            except (LibraryError, UploadError) as exc:
+                raise HTTPException(422, str(exc)) from exc
+
+    @app.post("/api/library/pictures/from-event")
+    def save_event_picture(body: SavePictureBody):
+        """Keep a picture the open event already has (e.g. its assets/duck.png) in Pictures."""
+        try:
+            picture_id = lib.add_picture(body.name, event_file_path(body.path), replace=False)
+            return {"id": picture_id, "name": next(p["name"] for p in lib.pictures() if p["id"] == picture_id)}
+        except (LibraryError, UploadError) as exc:
+            raise HTTPException(422, str(exc)) from exc
+
+    @app.put("/api/library/pictures/{picture_id}")
+    def rename_picture(picture_id: str, body: NewEventBody):
+        library_call(lib.rename_picture, picture_id, body.name)
+        return {"ok": True}
+
+    @app.delete("/api/library/pictures/{picture_id}")
+    def delete_picture(picture_id: str):
+        library_call(lib.delete_picture, picture_id)
+        return {"ok": True}
+
+    @app.get("/api/library/pictures/{picture_id}/image")
+    def picture_image(picture_id: str):
+        try:
+            path = lib.picture_path(picture_id)
+        except LibraryError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        return FileResponse(path, headers={"Cache-Control": "no-store"})
+
+    @app.post("/api/library/pictures/{picture_id}/use")
+    def use_picture(picture_id: str):
+        """Copy a saved picture into the open event; returns its path there for the slide."""
+        return library_call(lib.use_picture, picture_id, s.path.parent)
 
     @app.get("/api/team/logo")
     def team_logo_file():

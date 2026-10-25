@@ -34,7 +34,7 @@ from app.api.models import (
 
 def register(app, ctx):
     """The open event's routes."""
-    s, lib, library_call, home_lanes, look_key, same_name, matches_team_look = (
+    s, lib, library_call, home_lanes, look_key, same_name, matches_team_look, event_file_path = (
         ctx.s,
         ctx.lib,
         ctx.library_call,
@@ -42,6 +42,7 @@ def register(app, ctx):
         ctx.look_key,
         ctx.same_name,
         ctx.matches_team_look,
+        ctx.event_file_path,
     )
 
     @app.get("/api/event")
@@ -416,11 +417,7 @@ def register(app, ctx):
     @app.get("/api/asset")
     def event_asset(path: str):
         """A picture from the open event's folder (e.g. assets/poster.jpg), for the crop box."""
-        root = s.path.parent.resolve()
-        target = (root / path).resolve()
-        if root not in target.parents or not target.is_file():
-            raise HTTPException(404, "no such picture in this event")
-        return FileResponse(target, headers={"Cache-Control": "no-store"})
+        return FileResponse(event_file_path(path), headers={"Cache-Control": "no-store"})
 
     @app.get("/api/template.png")
     def template_png(name: str):
