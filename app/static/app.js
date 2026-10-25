@@ -50,7 +50,9 @@ function defaultSlide(type) {
 async function loadEvent(keepEditor = false) {
   state.event = await api("/api/event");
   if (state.templatesFor !== templatesKey()) await loadTemplates(); // the folder changed, or went missing or came back
-  $("#event-name").replaceChildren(el("a", { href: "/" }, "Events"), " / ", `${state.event.name}${state.event.date ? " · " + state.event.date : ""}`);
+  $("#event-name").replaceChildren(el("a", { href: "/" }, "Events"), " / ",
+    el("button", { class: "crumb-edit", type: "button", title: "Rename the event or change its date", on: { click: openDetails } },
+      `${state.event.name}${state.event.date ? " · " + state.event.date : ""}`));
   renderTabs();
   renderLoop();
   $("#undo").disabled = !state.event.can_undo;
@@ -1029,6 +1031,28 @@ $("#theme-save").addEventListener("click", async () => {
   await loadEvent();
   flash("Theme saved");
 });
+
+// The event's name and date, from its header: a duplicate starts as "<name> (copy)", dated today.
+function openDetails() {
+  $("#details-name").value = state.event.name;
+  $("#details-date").value = state.event.date || "";
+  $("#details-status").textContent = "";
+  $("#details").showModal();
+  $("#details-name").select();
+}
+async function saveDetails() {
+  const name = $("#details-name").value.trim();
+  if (!name) { $("#details-status").textContent = "Give the event a name."; $("#details-name").focus(); return; }
+  try { await api("/api/event/details", "PUT", { name, date: $("#details-date").value }); }
+  catch (err) { $("#details-status").textContent = err.message; return; }
+  $("#details").close();
+  await loadEvent(true);
+  flash("Saved");
+}
+$("#details-save").addEventListener("click", saveDetails);
+["#details-name", "#details-date"].forEach((sel) => $(sel).addEventListener("keydown", (e) => {
+  if (e.key === "Enter") { e.preventDefault(); saveDetails(); } // not the form's first button, Cancel
+}));
 
 $("#open-versions").addEventListener("click", async () => {
   const list = await api("/api/versions");

@@ -358,6 +358,13 @@ class Library:
         path.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding="utf-8")
         return folder.name
 
+    def delete(self, slug):
+        """Remove an event's folder: its file, its pictures and its kept versions."""
+        folder = self.event_file(slug).parent
+        if folder.parent != self.events_dir.resolve():  # only ever one event's own folder
+            raise LibraryError(f"no event named {slug!r}")
+        shutil.rmtree(folder)
+
     # --- .loopevent packages: an event folder in one zip file ---
 
     def export_package(self, slug, dest):

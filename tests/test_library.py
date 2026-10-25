@@ -99,3 +99,13 @@ def test_pool_lanes_are_team_settings(lib):
     assert lib.settings()["pool_lanes"] == 8 and lib.settings()["first_lane"] == 1
     lib.update_settings(pool_lanes=10, first_lane=0)
     assert lib.settings()["pool_lanes"] == 10 and lib.settings()["first_lane"] == 0
+
+
+def test_delete_removes_only_that_event(lib):
+    keep, gone = lib.create("Keep", "blank"), lib.create("Gone", "blank")
+    lib.delete(gone)
+    assert [e["slug"] for e in lib.events()] == [keep]
+    for slug in (gone, ".", ".."):
+        with pytest.raises(LibraryError):
+            lib.delete(slug)
+    assert lib.event_file(keep).exists()

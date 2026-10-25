@@ -104,6 +104,9 @@ label.btn{display:inline-flex;align-items:center}
 .logo-box{width:64px;height:64px;background:#000;border-radius:8px;display:inline-flex;align-items:center;justify-content:center}
 .logo-box img{max-width:56px;max-height:56px}
 .crumb a{color:var(--soft)}
+.crumb-edit{font:inherit;color:inherit;background:none;border:1px solid transparent;border-radius:6px;padding:2px 6px;cursor:pointer}
+.crumb-edit:hover{border-color:var(--ctl-line);color:var(--text)}.crumb-edit:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.btn-danger{background:#B3261E;border-color:#B3261E;color:#fff}
 @media (max-width:800px){.ev{grid-template-columns:1fr}.ev img{width:100%}}
 .qr-ok{color:var(--ok);font-size:13px}.qr-fail{color:#FF9B9B;font-size:13px}
 .badge{font-size:12px;color:var(--soft);background:var(--ctl);border:1px solid var(--ctl-line);border-radius:999px;padding:2px 8px}

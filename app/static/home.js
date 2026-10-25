@@ -39,7 +39,8 @@ function renderEvents() {
     el("div", { class: "row" },
       el("button", { class: "btn btn-primary", type: "button", on: { click: () => openEvent(e.slug) } }, "Open"),
       el("button", { class: "btn", type: "button", on: { click: () => duplicate(e) } }, "Duplicate"),
-      el("button", { class: "btn", type: "button", on: { click: () => savePackage(e) } }, "Save as .loopevent…"))))
+      el("button", { class: "btn", type: "button", on: { click: () => savePackage(e) } }, "Save as .loopevent…"),
+      el("button", { class: "btn", type: "button", on: { click: () => confirmDelete(e) } }, "Delete…"))))
     : [el("li", { class: "muted" }, q ? "No events match." : "No events yet. Start one above.")]));
 }
 
@@ -60,9 +61,24 @@ async function create(starter) {
 async function duplicate(e) {
   const name = `${e.name} (copy)`;
   try { const { slug } = await api(`/api/events/${encodeURIComponent(e.slug)}/duplicate`, "POST", { name, date: today() });
-    status(`Made “${name}”. Rename it in the event.`); await load(); return slug;
+    status(`Made “${name}”. Open it and click its name to rename it or change the date.`); await load(); return slug;
   } catch (err) { status(`Not copied: ${err.message}`); return null; }
 }
+
+let deleting = null; // the event the Delete dialog asks about
+function confirmDelete(e) {
+  deleting = e;
+  $("#delete-what").textContent = [e.name, e.date].filter(Boolean).join(" · ");
+  $("#delete-status").textContent = "";
+  $("#delete-dialog").showModal();
+}
+$("#delete-go").addEventListener("click", async () => {
+  try { await api(`/api/events/${encodeURIComponent(deleting.slug)}`, "DELETE"); }
+  catch (err) { $("#delete-status").textContent = `Not deleted: ${err.message}`; return; }
+  $("#delete-dialog").close();
+  status(`Deleted “${deleting.name}”.`);
+  await load();
+});
 
 async function savePackage(e) {
   const fileName = `${e.name}.loopevent`;

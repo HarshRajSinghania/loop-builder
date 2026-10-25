@@ -125,6 +125,15 @@
     <div class="row end"><button class="btn" value="close">Close</button><button class="btn btn-primary" type="button" id="theme-save">Save</button></div>
   </form>
 </dialog>
+<dialog id="details">
+  <form method="dialog" class="export">
+    <h2>Event</h2>
+    <p class="muted">The name and date the events home shows. Changing them can be undone.</p>
+    <div class="row"><label class="lbl grow">Event name<input id="details-name" class="field"></label><label class="lbl">Date<input id="details-date" class="field" type="date"></label></div>
+    <p id="details-status" class="warn" aria-live="polite"></p>
+    <div class="row end"><button class="btn" value="close">Cancel</button><button class="btn btn-primary" type="button" id="details-save">Save</button></div>
+  </form>
+</dialog>
 <dialog id="versions">
   <form method="dialog" class="export">
     <h2>Versions</h2>

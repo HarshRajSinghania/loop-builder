@@ -239,3 +239,43 @@ def test_about_has_the_version_links_and_notices(client):
     about = api.get("/api/about").json()
     assert about["version"] and about["project"].startswith("https://github.com/")
     assert "Apache" in about["notices"] and "x264" in about["notices"]
+
+
+def test_rename_and_redate_the_open_event_and_undo_it(client):
+    api, path = client
+    res = api.put("/api/event/details", json={"name": "  Dual meet   (copy) ", "date": "2026-11-07"})
+    assert res.status_code == 200
+    event = api.get("/api/event").json()
+    assert event["name"] == "Dual meet (copy)" and event["date"] == "2026-11-07" and event["can_undo"]
+    assert event["slug"] == "event"  # the folder keeps its name
+    api.post("/api/undo")
+    assert api.get("/api/event").json()["name"] != "Dual meet (copy)"
+    assert api.put("/api/event/details", json={"name": "Sections", "date": ""}).status_code == 200
+    assert api.get("/api/event").json()["date"] is None and "date:" not in path.read_text(encoding="utf-8")
+
+
+def test_an_event_needs_a_name_and_a_real_date(client):
+    api, path = client
+    before = path.read_text(encoding="utf-8")
+    assert api.put("/api/event/details", json={"name": "   ", "date": "2026-11-07"}).status_code == 422
+    assert api.put("/api/event/details", json={"name": "Sections", "date": "next Friday"}).status_code == 422
+    assert api.put("/api/event/details", json={"name": "Sections", "date": "2026-02-30"}).status_code == 422
+    assert path.read_text(encoding="utf-8") == before
+
+
+def test_a_duplicate_can_be_renamed_and_any_event_deleted(tmp_path):
+    lib = Library(tmp_path / "Loop Builder")
+    api = TestClient(create_app(library=lib))
+    first = api.post("/api/events", json={"name": "Dual", "date": "2026-10-01", "starter": "blank"}).json()["slug"]
+    copy = api.post(f"/api/events/{first}/duplicate", json={"name": "Dual (copy)", "date": "2026-10-24"}).json()
+    api.post(f"/api/events/{copy['slug']}/open")
+    api.put("/api/event/details", json={"name": "Dual: Lakeview", "date": "2026-11-07"})
+    found = {e["slug"]: (e["name"], e["date"]) for e in api.get("/api/home").json()["events"]}
+    assert found == {first: ("Dual", "2026-10-01"), copy["slug"]: ("Dual: Lakeview", "2026-11-07")}
+    assert api.delete(f"/api/events/{first}").status_code == 200
+    assert not (lib.events_dir / first).exists()
+    assert api.delete(f"/api/events/{copy['slug']}").status_code == 200  # the open one: the editor closes it
+    assert api.get("/api/home").json()["events"] == [] and api.get("/api/home").json()["open"] is None
+    assert api.get("/api/event").status_code == 409
+    assert api.delete(f"/api/events/{first}").status_code == 422  # already gone
+    assert api.delete("/api/events/..").status_code in (404, 422) and lib.events_dir.exists()

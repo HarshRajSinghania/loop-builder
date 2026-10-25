@@ -37,6 +37,16 @@
   </section>
 </main>
 
+<dialog id="delete-dialog">
+  <form method="dialog" class="export">
+    <h2>Delete this event?</h2>
+    <p id="delete-what"></p>
+    <p class="warn">Its loops, pictures and kept versions are removed from this computer, and this can't be undone. Videos you exported and .loopevent files you saved stay where they are.</p>
+    <p id="delete-status" class="warn" aria-live="polite"></p>
+    <div class="row end"><button class="btn" value="close">Cancel</button><button class="btn btn-danger" type="button" id="delete-go">Delete</button></div>
+  </form>
+</dialog>
+
 <script src="/static/common.js"></script>
 <script src="/static/settings.js"></script>
 <script src="/static/home.js"></script>

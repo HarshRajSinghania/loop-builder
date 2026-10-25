@@ -13,6 +13,7 @@ import threading
 import time
 import uuid
 import zipfile
+from datetime import date
 from urllib.parse import quote
 from pathlib import Path
 
@@ -196,6 +197,13 @@ class NewEventBody(BaseModel):
     name: str
     date: str | None = None
     starter: str = "dual-meet"
+
+
+class DetailsBody(BaseModel):
+    """The open event's name and date (YYYY-MM-DD; empty for none), as its header shows them."""
+
+    name: str
+    date: str = ""
 
 
 class ThemeBody(BaseModel):
@@ -420,6 +428,19 @@ def create_app(event_path=None, templates=None, library=None):
             raise HTTPException(422, str(exc)) from exc
         return {"ok": True}
 
+    @app.delete("/api/events/{slug}")
+    def delete_event(slug: str):
+        """Delete an event's folder. If it's the open event, the editor closes it first."""
+        path = library_call(lib.event_file, slug)
+        session = current.session
+        if session and session.path == path:
+            with session.lock:
+                if any(job["state"] == "running" for job in jobs.values()):
+                    raise HTTPException(409, "this event is still exporting")
+                current.session = None
+        library_call(lib.delete, slug)
+        return {"ok": True}
+
     @app.get("/api/events/{slug}/thumb.png")
     def event_thumb(slug: str):
         """The event's first slide, for its row on the home screen."""
@@ -617,6 +638,31 @@ def create_app(event_path=None, templates=None, library=None):
     def redo():
         with s.lock:
             return {"changed": s.step(False)}
+
+    @app.put("/api/event/details")
+    def save_details(body: DetailsBody):
+        """Rename the open event or change its date (undoable). Its folder keeps the name it was made with:
+        the folder is how the app finds the event, and the events home shows the name from the event file."""
+        name = " ".join(body.name.split())
+        if not name:
+            raise HTTPException(422, "an event needs a name")
+        when = body.date.strip()
+        if when:
+            try:
+                when = date.fromisoformat(when).isoformat()
+            except ValueError as exc:
+                raise HTTPException(422, f"not a date: {body.date}") from exc
+
+        def edit(d):
+            d["event"] = name
+            if when:
+                d["date"] = when
+            else:
+                d.pop("date", None)
+
+        with s.lock:
+            s.change(edit)
+        return {"ok": True}
 
     @app.put("/api/theme")
     def save_theme(body: ThemeBody):
