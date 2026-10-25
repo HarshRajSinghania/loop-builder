@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from PIL import Image
 
 from app.library import Library
 from app.server import create_app
@@ -365,7 +366,6 @@ def test_the_editor_can_ask_before_an_export_replaces_files(client, tmp_path):
 
 
 def test_a_visiting_team_goes_on_the_cards_that_wait_for_it(tmp_path):
-    from PIL import Image  # pylint: disable=import-outside-toplevel
 
     lib = Library(tmp_path / "Loop Builder")
     for name, colour in (("Hastings", "purple"), ("Lakeville", "green")):
@@ -396,8 +396,21 @@ def test_a_visiting_team_goes_on_the_cards_that_wait_for_it(tmp_path):
     assert api.get("/api/event").json()["visitor"]["name"] == "Hastings"
 
 
+def test_a_second_picture_of_the_same_name_keeps_the_first(client, tmp_path):
+    api, path = client
+    files = []
+    for colour in ("red", "blue", "blue"):  # two different poster.png files, then the second again
+        picture = tmp_path / colour / "poster.png"
+        picture.parent.mkdir(exist_ok=True)
+        Image.new("RGB", (40, 30), colour).save(picture)
+        with picture.open("rb") as fh:
+            files.append(api.post("/api/pictures", files={"file": ("poster.png", fh)}).json()["file"])
+    assert files[0] != files[1] and files[1] == files[2]
+    first = Image.open(path.parent / files[0]).convert("RGB").getpixel((0, 0))
+    assert first[0] > 200 and first[2] < 50  # still the red one
+
+
 def test_pictures_library_routes(client, tmp_path):
-    from PIL import Image  # pylint: disable=import-outside-toplevel
 
     api, path = client
     Image.new("RGBA", (64, 64), (255, 200, 0, 255)).save(tmp_path / "duck.png")

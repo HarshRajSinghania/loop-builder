@@ -98,15 +98,21 @@ def prepare_logo(src, out, trim=True, long_side=512):
     return out
 
 
-def prepare_upload(src, out_dir):
-    """Shrink and re-encode one picked file into out_dir; returns the working copy's path."""
+def prepare_upload(src, out_dir, replace=True):
+    """Shrink and re-encode one picked file into out_dir; returns the working copy's path. With replace=False a
+    different picture of the same name gets a free one ("poster 2.jpg"), so slides using the first keep it; the
+    same picture again reuses its copy."""
     src = Path(src)
     try:
         img = open_picture(src)
     except OSError as exc:
         raise UploadError(f"{src.name} isn't a picture Loop Builder can read") from exc
     data, ext = encode(img)
-    out = Path(out_dir) / (src.stem + ext)
+    out, n = Path(out_dir) / (src.stem + ext), 2
+    while not replace and out.exists():
+        if out.read_bytes() == data:
+            return out
+        out, n = out.with_name(f"{src.stem} {n}{ext}"), n + 1
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_bytes(data)
     return out

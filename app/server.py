@@ -974,7 +974,8 @@ def create_app(event_path=None, templates=None, library=None):
             src = Path(tmp) / Path(file.filename or "picture").name
             src.write_bytes(file.file.read())
             try:
-                stored = prepare_upload(src, assets)
+                # replace=False: another poster.png mustn't change the slides already using this one
+                stored = prepare_upload(src, assets, replace=False)
             except UploadError as exc:
                 raise HTTPException(422, str(exc)) from exc
         return {"file": f"assets/{stored.name}", "bytes": stored.stat().st_size}
