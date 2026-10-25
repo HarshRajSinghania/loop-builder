@@ -478,15 +478,23 @@ def create_app(event_path=None, templates=None, library=None):
             return Response(status_code=204)
         return Response(png(img), media_type="image/png", headers={"Cache-Control": "no-store"})
 
+    def import_from(package):
+        try:
+            return {"slug": lib.import_package(package)}
+        except (LibraryError, OSError, zipfile.BadZipFile) as exc:
+            raise HTTPException(422, f"couldn't import: {exc}") from exc
+
     @app.post("/api/events/import")
     def import_event(file: UploadFile):
         with tempfile.TemporaryDirectory() as tmp:
             package = Path(tmp) / Path(file.filename or "event.loopevent").name
             package.write_bytes(file.file.read())
-            try:
-                return {"slug": lib.import_package(package)}
-            except (LibraryError, OSError, zipfile.BadZipFile) as exc:
-                raise HTTPException(422, f"couldn't import: {exc}") from exc
+            return import_from(package)
+
+    @app.post("/api/events/import-file")
+    def import_event_file(body: PathBody):
+        """Import a .loopevent picked with the app's own Open dialog."""
+        return import_from(Path(body.path).expanduser())
 
     @app.post("/api/events/{slug}/package")
     def save_package(slug: str, body: PathBody):

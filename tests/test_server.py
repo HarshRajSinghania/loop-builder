@@ -328,3 +328,15 @@ def test_the_home_team_name_and_logo_in_lanes_follow_use_team_theme(client):
     event = api.get("/api/event").json()
     lane = event["loops"][0]["slides"][-1]["raw"]["lanes"]["lanes"][0]
     assert event["team_look"] and lane["name"] == "Riverside Swim Club"  # team_look: the lane has the new logo too
+
+
+def test_import_a_package_picked_with_the_open_dialog(tmp_path):
+    lib = Library(tmp_path / "Loop Builder")
+    api = TestClient(create_app(library=lib))
+    slug = api.post("/api/events", json={"name": "Sections", "date": "2026-10-01", "starter": "blank"}).json()["slug"]
+    package = tmp_path / "Sections.loopevent"
+    assert api.post(f"/api/events/{slug}/package", json={"path": str(package)}).status_code == 200
+    copy = api.post("/api/events/import-file", json={"path": str(package)}).json()["slug"]
+    names = sorted(e["name"] for e in api.get("/api/home").json()["events"])
+    assert copy != slug and names == ["Sections", "Sections (2)"]
+    assert api.post("/api/events/import-file", json={"path": str(tmp_path / "nope.loopevent")}).status_code == 422

@@ -26,7 +26,7 @@ def free_port():
 
 
 class NativeDialogs:
-    """The system's own folder and save pickers, and fitting the window to the screen, offered to the page
+    """The system's own folder, open and save pickers, and fitting the window to the screen, offered to the page
     as window.pywebview.api."""
 
     def __init__(self):
@@ -47,6 +47,11 @@ class NativeDialogs:
 
     def save_file(self, name, start=""):
         return self._dialog("SAVE", directory=start or "", save_filename=name)
+
+    def open_package(self, start=""):
+        """A .loopevent to import. The page's own file input can't offer one on a Mac: the web view filters by
+        file type, and macOS knows no type for .loopevent, so it greys those files out."""
+        return self._dialog("OPEN", directory=start or "", file_types=("Loop Builder event (*.loopevent)",))
 
     def fit_screen(self, left, top, width, height):
         """Given the usable screen area the page measured, fit and centre the window if it spills over (once

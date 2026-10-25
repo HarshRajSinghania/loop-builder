@@ -95,13 +95,19 @@ async function savePackage(e) {
   }
 }
 
-$("#import-pick").addEventListener("click", () => $("#import-file").click()); // a button, so Tab reaches it
+async function imported(request) {
+  try { const { slug } = await request(); status("Imported."); await load(); openEvent(slug); }
+  catch (err) { status(err.message); }
+}
+$("#import-pick").addEventListener("click", async () => { // a button, so Tab reaches it
+  if (!native()) { $("#import-file").click(); return; } // browser tab: its own file picker
+  const path = await native().open_package(home.settings.export_dir || home.folder || ""); // the app: the system's, which can offer .loopevent files; it starts where Save does
+  if (path) await imported(() => api("/api/events/import-file", "POST", { path }));
+});
 $("#import-file").addEventListener("change", async (ev) => {
   const file = ev.target.files[0];
   ev.target.value = "";
-  if (!file) return;
-  try { const { slug } = await upload("/api/events/import", file); status("Imported."); await load(); openEvent(slug); }
-  catch (err) { status(err.message); }
+  if (file) await imported(() => upload("/api/events/import", file));
 });
 $("#search").addEventListener("input", renderEvents);
 $("#new-date").value = today();
