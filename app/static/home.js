@@ -113,7 +113,9 @@ $("#search").addEventListener("input", renderEvents);
 $("#new-date").value = today();
 
 // First run: the template folder
-$("#setup-pick").addEventListener("click", () => pickFolder($("#setup-folder")));
+const clearSetupStatus = () => { $("#setup-status").textContent = ""; }; // a new folder: the old reason no longer applies
+$("#setup-pick").addEventListener("click", async () => { if (await pickFolder($("#setup-folder"))) clearSetupStatus(); });
+$("#setup-folder").addEventListener("input", clearSetupStatus);
 $("#setup-save").addEventListener("click", async () => {
   $("#setup-status").textContent = "";
   try { await api("/api/settings", "PUT", { templates: $("#setup-folder").value.trim() }); status("Template folder saved."); load(); }

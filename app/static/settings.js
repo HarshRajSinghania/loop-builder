@@ -56,6 +56,7 @@ async function openSettings(onSaved) {
   $("#set-lanes").value = String(s.pool_lanes ?? 8);
   $("#set-first").value = String(s.first_lane ?? 1);
   $("#template-count").textContent = settingsHome.templates_found ? `${settingsHome.template_count} templates found` : "Folder not found";
+  $("#template-count").className = "muted";
   $("#settings-status").textContent = "";
   $("#version").textContent = `Loop Builder ${settingsHome.version}`;
   showLogo();
@@ -109,16 +110,21 @@ $("#settings").addEventListener("close", async () => {
   const changes = Object.fromEntries(Object.entries(now).filter(([k, v]) => v !== (s[k] ?? (k === "pool_lanes" ? 8 : k === "first_lane" ? 1 : ""))));
   if (Object.entries(look).some(([k, v]) => v !== (before[k] || DEFAULTS[k]).toUpperCase())) changes.theme = look;
   if (!Object.keys(changes).length) return;
-  let problem = null;
+  let problem = null, folderRefused = false;
   try { await api("/api/settings", "PUT", changes); }
   catch (err) { // a folder that isn't there: keep the rest, put the folder back and say why, so closing again works
     problem = `${err.message}. The template folder wasn't changed.`;
+    folderRefused = true;
     delete changes.templates;
     $("#set-templates").value = s.templates || "";
     try { if (Object.keys(changes).length) await api("/api/settings", "PUT", changes); }
-    catch (again) { problem = again.message; Object.keys(changes).forEach((k) => delete changes[k]); }
+    catch (again) { problem = again.message; folderRefused = false; Object.keys(changes).forEach((k) => delete changes[k]); }
   }
   Object.assign(s, changes);
-  if (Object.keys(changes).length && settingsSaved) await settingsSaved();
-  if (problem) { $("#settings-status").textContent = problem; $("#settings").showModal(); }
+  if (problem) { // reopen at once, the reason where it can be seen: beside the folder, which gets focus
+    $("#settings-status").textContent = problem;
+    $("#settings").showModal();
+    if (folderRefused) { const note = $("#template-count"); note.textContent = problem; note.className = "warn"; $("#set-templates").focus(); }
+  }
+  if (Object.keys(changes).length && settingsSaved) await settingsSaved(); // then the page behind catches up
 });
