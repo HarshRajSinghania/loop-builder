@@ -3,7 +3,10 @@
 
 let home;
 const status = (text) => { $("#status").textContent = text; };
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => { // the local date: toISOString is UTC, a day ahead on an evening in the Americas
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
 const edited = (t) => {
   const mins = Math.round((Date.now() / 1000 - t) / 60);
   if (mins < 1) return "edited just now";
