@@ -2,7 +2,7 @@
 "use strict";
 
 let home;
-const status = (text) => { $("#status").textContent = text; };
+const status = (text, detail = text) => { $("#status").textContent = text; $("#status").title = detail; };
 const today = () => { // the local date: toISOString is UTC, a day ahead on an evening in the Americas
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -86,9 +86,9 @@ $("#delete-go").addEventListener("click", async () => {
 async function savePackage(e) {
   const fileName = `${e.name}.loopevent`;
   if (native()) {
-    const path = await native().save_file(fileName, "");
+    const path = await native().save_file(fileName, home.settings.export_dir || home.folder || "");
     if (!path) return;
-    try { const { file } = await api(`/api/events/${encodeURIComponent(e.slug)}/package`, "POST", { path }); status(`Saved ${file}`); }
+    try { const { file } = await api(`/api/events/${encodeURIComponent(e.slug)}/package`, "POST", { path }); status(`Saved ${file.split(/[\\/]/).pop()}`, file); }
     catch (err) { status(`Not saved: ${err.message}`); }
   } else {
     location.href = `/api/events/${encodeURIComponent(e.slug)}/package`; // browser tab: a download
@@ -109,8 +109,9 @@ $("#new-date").value = today();
 // First run: the template folder
 $("#setup-pick").addEventListener("click", () => pickFolder($("#setup-folder")));
 $("#setup-save").addEventListener("click", async () => {
+  $("#setup-status").textContent = "";
   try { await api("/api/settings", "PUT", { templates: $("#setup-folder").value.trim() }); status("Template folder saved."); load(); }
-  catch (err) { status(err.message); }
+  catch (err) { $("#setup-status").textContent = `${err.message}. Check the folder, or click Choose… to pick it.`; $("#setup-folder").focus(); }
 });
 
 // Settings

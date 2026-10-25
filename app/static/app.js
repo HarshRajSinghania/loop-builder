@@ -465,9 +465,10 @@ function layoutNote(p) {
 }
 const miniLayout = (layout) => {
   const bar = (w, h, c = "#8A9099") => el("i", { style: `width:${w}px;height:${h}px;background:${c}` });
-  if (layout === "logo-center") return el("span", { class: "mini" }, bar(30, 3), bar(52, 7, "#ECEEF0"), bar(12, 12, "#CC0202"), bar(44, 3));
+  const primary = (state.event.theme || {}).primary || DEFAULTS.primary; // the event's own colour, as on its slides
+  if (layout === "logo-center") return el("span", { class: "mini" }, bar(30, 3), bar(52, 7, "#ECEEF0"), bar(12, 12, primary), bar(44, 3));
   if (layout === "text-qr") return el("span", { class: "mini", style: "flex-direction:row;gap:5px" }, el("span", { style: "display:flex;flex-direction:column;gap:3px;align-items:center" }, bar(34, 3), bar(40, 7, "#ECEEF0"), bar(30, 3)), bar(26, 26, "#FFFFFF"));
-  if (layout === "banner") return el("span", { class: "mini", style: "padding:0;gap:4px" }, bar(84, 4, "#CC0202"), bar(60, 9, "#ECEEF0"), bar(38, 3), bar(84, 4, "#CC0202"));
+  if (layout === "banner") return el("span", { class: "mini", style: "padding:0;gap:4px" }, bar(84, 4, primary), bar(60, 9, "#ECEEF0"), bar(38, 3), bar(84, 4, primary));
   return el("span", { class: "mini" }, bar(34, 3), bar(56, 8, "#ECEEF0"), bar(42, 3));
 };
 
