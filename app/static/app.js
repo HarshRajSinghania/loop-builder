@@ -839,11 +839,15 @@ function lanesEditor(p) {
 }
 
 // Teams opened from a team list: when exactly one team was added there, `use` it where the list was.
+// After the Teams dialog closes: hand the team added there to `use` (the lane, card or visitor it was opened from).
+// With several added in one visit, the last one added; teams are listed by name, so the dialog keeps that order.
 function afterAdding(use) {
   const before = new Set(state.teams.map((t) => t.id));
+  state.teamsAdded = [];
   return () => {
     const added = state.teams.filter((t) => !before.has(t.id));
-    if (added.length === 1) use(added[0]);
+    const last = [...state.teamsAdded].reverse().map((id) => added.find((t) => t.id === id)).find(Boolean);
+    if (last || added.length === 1) use(last || added[0]);
   };
 }
 
@@ -876,6 +880,7 @@ async function manageTeams(after) {
     form.append("file", file); form.append("name", name); form.append("trim", $("#team-trim").checked ? "true" : "false");
     const res = await fetch("/api/teams", { method: "POST", body: form });
     if (!res.ok) { $("#team-status").textContent = await failure(res); return; }
+    (state.teamsAdded ||= []).push((await res.json()).id); // in the order added, for afterAdding
     $("#team-name").value = ""; $("#team-file").value = ""; $("#team-file-name").textContent = "No logo chosen";
     $("#team-status").textContent = `Added ${name}.`;
     render();
