@@ -1,6 +1,6 @@
 """The app version (the one place it is set; CI tags releases as v<VERSION>) and where to look for updates."""
 
-VERSION = "0.1.6"
+VERSION = "0.1.7"
 
 # Where the app asks, once at each start, whether a newer release exists (GitHub's "latest release" API).
 # None turns the update check off.
