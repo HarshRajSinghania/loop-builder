@@ -96,6 +96,12 @@ function renderLoop() {
   markIssues();
 }
 
+// The preview stays at the top while the fields scroll under it, so a field the browser scrolls to (Tab, a
+// focus) must land below it, not behind it: scroll-padding follows the preview's height.
+new ResizeObserver(([entry]) => {
+  document.documentElement.style.scrollPaddingTop = `${Math.round(entry.target.getBoundingClientRect().height) + 12}px`;
+}).observe(document.querySelector(".preview"));
+
 function markCurrent() {
   document.querySelectorAll("#slides .thumb").forEach((b, j) => b.setAttribute("aria-current", String(j === state.n)));
   markIssues();
