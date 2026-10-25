@@ -139,10 +139,10 @@ $("#settings").addEventListener("close", async () => {
     catch (again) { problem = again.message; folderRefused = false; Object.keys(changes).forEach((k) => delete changes[k]); }
   }
   Object.assign(s, changes);
-  if (problem) { // reopen at once, the reason where it can be seen: beside the folder, which gets focus
-    $("#settings-status").textContent = problem;
+  if (problem) { // reopen at once, the reason where it can be seen once: beside the folder (which gets focus), else below
     $("#settings").showModal();
     if (folderRefused) { const note = $("#template-count"); note.textContent = problem; note.className = "warn"; $("#set-templates").focus(); }
+    else $("#settings-status").textContent = problem;
   }
   if (Object.keys(changes).length && settingsSaved) await settingsSaved(); // then the page behind catches up
 });

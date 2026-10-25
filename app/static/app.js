@@ -1234,7 +1234,7 @@ $("#redo").addEventListener("click", () => stepHistory("redo"));
 // The shortcuts as each system names them: Cmd on a Mac; Windows also redoes with Ctrl+Y.
 const MAC = /Mac|iPhone|iPad/.test(navigator.platform);
 [["#undo", MAC ? "Undo (⌘Z)" : "Undo (Ctrl+Z)"], ["#redo", MAC ? "Redo (⇧⌘Z)" : "Redo (Ctrl+Y)"]].forEach(([sel, tip]) => {
-  $(sel).title = tip; $(sel).setAttribute("aria-label", tip);
+  $(sel).dataset.tip = tip; $(sel).setAttribute("aria-label", tip);
 });
 document.addEventListener("keydown", (e) => {
   const key = e.key.toLowerCase(), ctrlY = !MAC && e.ctrlKey && !e.shiftKey && key === "y";
