@@ -47,6 +47,8 @@ class MissingAsset(FileNotFoundError):
 
 @dataclass
 class Clip:
+    """A slide's frames for a video, drawn as they're needed, with its first and last for the fades."""
+
     runs: Callable  # () -> iterator of (Image, count)
     first: Image.Image
     last: Image.Image
@@ -72,8 +74,14 @@ def with_badges(clip, badges):
         return last[1]
 
     seek = clip.seek and (lambda k: put(clip.seek(k)))
-    return Clip(lambda: ((put(img), n) for img, n in clip.runs()), put(clip.first), put(clip.last), clip.frames,
-                clip.timed, seek)
+    return Clip(
+        lambda: ((put(img), n) for img, n in clip.runs()),
+        put(clip.first),
+        put(clip.last),
+        clip.frames,
+        clip.timed,
+        seek,
+    )
 
 
 def seconds(value):
@@ -138,8 +146,8 @@ class Renderer:
             )
         if self._live.get(path):
             self.warn(
-                f"{path.stem} shows live meet data ({tpl.describe_fields(self._live[path])}) that a video would freeze: "
-                "pick a template without live fields"
+                f"{path.stem} shows live meet data ({tpl.describe_fields(self._live[path])}) "
+                "that a video would freeze: pick a template without live fields"
             )
         return self._boards[path].copy()
 
@@ -525,12 +533,17 @@ class Renderer:
             tx = min(max(float(pan["to"][0]) * iw - bw / 2, 0), iw - bw)
             ty = min(max(float(pan["to"][1]) * ih - bh / 2, 0), ih - bh)
             end = (tx, ty, tx + bw, ty + bh)
-            box_at = lambda e: tuple(s0 + (e1 - s0) * e for s0, e1 in zip(start, end))
+
+            def box_at(e):
+                return tuple(s0 + (e1 - s0) * e for s0, e1 in zip(start, end))
+
         else:  # the first format: start and end framings, Fill only
             a, b = pan.get("start", {}), pan.get("end", {})
 
             def box_at(e):
-                mix = lambda k, dflt: a.get(k, dflt) + (b.get(k, dflt) - a.get(k, dflt)) * e
+                def mix(k, dflt):
+                    return a.get(k, dflt) + (b.get(k, dflt) - a.get(k, dflt)) * e
+
                 return self._crop(src, mix("x", focus[0]), mix("y", focus[1]), mix("zoom", zoom))
 
         def frame(t):

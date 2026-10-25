@@ -57,7 +57,7 @@ For working on the editor itself, `--browser` opens it in a browser tab instead,
 - Build the app: `.venv/bin/pyinstaller packaging/loopbuilder.spec --noconfirm`; installers, signing and CI are
   in [packaging/README.md](packaging/README.md). The version is set in `app/version.py`.
 - Events live in Documents › Loop Builder (set `LOOPBUILDER_HOME` to use another folder, as the tests do).
-- Tests: `.venv/bin/python -m pytest`. Lint: `.venv/bin/pylint loopgen app tests`. Format: `black -l 120`.
+- Tests: `.venv/bin/python -m pytest`. Lint: `.venv/bin/pylint loopgen app tests packaging/*.py`. Format: `.venv/bin/black loopgen app tests packaging` (120 columns, set in `pyproject.toml`). CI checks both, so keep them clean.
 - Pictures added to an event are kept as working copies at most 2048 px on the long side, so previews stay fast.
 
 ## Help and feedback
