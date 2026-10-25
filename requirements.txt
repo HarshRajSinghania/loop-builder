@@ -1,6 +1,6 @@
 Pillow>=13.0.0,<14
 qrcode>=8.2,<9
-zxing-cpp>=2.3,<3
+zxing-cpp>=3.1.1,<4
 PyYAML>=6.0,<7
 av>=19.0.2,<20
 fastapi>=0.159.1
