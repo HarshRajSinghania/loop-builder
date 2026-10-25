@@ -37,9 +37,12 @@ def _has_alpha(img):
     return img.getchannel("A").getextrema()[0] < 255
 
 
-def encode(img):
-    """Shrunk picture as (bytes, extension): PNG when it has transparency, else JPEG."""
+def encode(img, lossless=False):
+    """Shrunk picture as (bytes, extension): PNG when it has transparency (or `lossless`), else JPEG."""
     buf = io.BytesIO()
+    if lossless and not _has_alpha(img):
+        img.convert("RGB").save(buf, "PNG", optimize=True)
+        return buf.getvalue(), ".png"
     if _has_alpha(img):
         img.convert("RGBA").save(buf, "PNG", optimize=True)
         return buf.getvalue(), ".png"
@@ -104,6 +107,26 @@ def prepare_upload(src, out_dir):
         raise UploadError(f"{src.name} isn't a picture Loop Builder can read") from exc
     data, ext = encode(img)
     out = Path(out_dir) / (src.stem + ext)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_bytes(data)
+    return out
+
+
+LOSSLESS = (".png", ".gif", ".bmp")  # badges, logos and drawn cards: flat colour that JPEG would smudge
+
+
+def prepare_picture(src, out_stem, trim=False):
+    """A picture for the Pictures library: shrunk like an upload, optionally trimmed of a white page, and kept
+    as PNG when it came as one. Saved as out_stem plus .png or .jpg; returns its path."""
+    src = Path(src)
+    try:
+        img = open_picture(src)
+    except OSError as exc:
+        raise UploadError(f"{src.name} isn't a picture Loop Builder can read") from exc
+    if trim:
+        img = trim_white(img)
+    data, ext = encode(img, lossless=src.suffix.lower() in LOSSLESS)
+    out = Path(out_stem).with_suffix(ext)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_bytes(data)
     return out

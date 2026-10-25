@@ -396,6 +396,31 @@ def test_a_visiting_team_goes_on_the_cards_that_wait_for_it(tmp_path):
     assert api.get("/api/event").json()["visitor"]["name"] == "Hastings"
 
 
+def test_pictures_library_routes(client, tmp_path):
+    from PIL import Image  # pylint: disable=import-outside-toplevel
+
+    api, path = client
+    Image.new("RGBA", (64, 64), (255, 200, 0, 255)).save(tmp_path / "duck.png")
+    with (tmp_path / "duck.png").open("rb") as fh:
+        pic_id = api.post("/api/library/pictures", data={"name": "Duck"}, files={"file": ("duck.png", fh)}).json()["id"]
+    assert [p["name"] for p in api.get("/api/library/pictures").json()] == ["Duck"]
+    assert api.get(f"/api/library/pictures/{pic_id}/image").status_code == 200
+    used = api.post(f"/api/library/pictures/{pic_id}/use").json()
+    assert used == {"file": "assets/pictures/duck.png"} and (path.parent / used["file"]).exists()
+    assert api.put(f"/api/library/pictures/{pic_id}", json={"name": "Rubber duck"}).status_code == 200
+    # an event's own picture can be kept too, but nothing outside the event's folder
+    own = next((path.parent / "assets").glob("*.png")).relative_to(path.parent).as_posix()
+    assert api.post("/api/library/pictures/from-event", json={"path": own, "name": "Logo"}).json()["name"] == "Logo"
+    kept = api.post("/api/library/pictures/from-event", json={"path": own, "name": "Rubber duck"}).json()
+    assert kept["name"] == "Rubber duck 2"  # never replaces a saved picture of the same name
+    outside = api.post("/api/library/pictures/from-event", json={"path": "../../etc/hosts", "name": "x"})
+    assert outside.status_code == 404
+    assert len(api.get("/api/library/pictures").json()) == 3
+    assert api.delete(f"/api/library/pictures/{pic_id}").status_code == 200
+    assert api.post(f"/api/library/pictures/{pic_id}/use").status_code == 422
+    assert api.get(f"/api/library/pictures/{pic_id}/image").status_code == 404
+
+
 def test_settings_can_count_a_folders_templates_as_it_is_typed(client, tmp_path):
     api, _ = client
     (tmp_path / "tpl" / "sub").mkdir(parents=True)

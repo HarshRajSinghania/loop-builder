@@ -114,3 +114,32 @@ def test_delete_removes_only_that_event(lib):
         with pytest.raises(LibraryError):
             lib.delete(slug)
     assert lib.event_file(keep).exists()
+
+
+def test_pictures_are_kept_for_every_event_and_copied_into_one_on_use(lib, tmp_path):
+    from PIL import Image  # pylint: disable=import-outside-toplevel
+
+    badge = Image.new("RGB", (300, 120), "white")
+    badge.paste((20, 40, 160), (40, 20, 260, 100))  # a flat-colour badge: kept as PNG, not smudged into a JPEG
+    badge.save(tmp_path / "app-badge.png")
+    Image.new("RGB", (3000, 2000), (200, 150, 40)).save(tmp_path / "duck.jpg")
+    badge_id = lib.add_picture("App badge", tmp_path / "app-badge.png", trim=True)
+    duck_id = lib.add_picture("Duck", tmp_path / "duck.jpg")
+    pictures = {p["id"]: p for p in lib.pictures()}
+    assert [p["name"] for p in lib.pictures()] == ["App badge", "Duck"]
+    assert pictures[badge_id]["file"] == "app-badge.png" and pictures[badge_id]["size"] == [220, 80]  # page trimmed
+    assert pictures[duck_id]["file"] == "duck.jpg" and max(pictures[duck_id]["size"]) == 2048  # shrunk working copy
+    slug = lib.create("Sections", "sections")
+    folder = lib.event_file(slug).parent
+    assert lib.use_picture(badge_id, folder) == {"file": "assets/pictures/app-badge.png"}
+    assert (folder / "assets" / "pictures" / "app-badge.png").exists()
+    lib.add_picture("Duck", tmp_path / "app-badge.png")  # the same name replaces it, even as another type
+    assert sorted(p.name for p in lib.pictures_dir.iterdir()) == ["app-badge.png", "duck.png", "pictures.json"]
+    lib.rename_picture(duck_id, "Rubber duck")
+    lib.delete_picture(badge_id)
+    assert [p["name"] for p in lib.pictures()] == ["Rubber duck"]
+    assert (folder / "assets" / "pictures" / "app-badge.png").exists()  # the event keeps its copy
+    with pytest.raises(LibraryError):
+        lib.add_picture("  ", tmp_path / "duck.jpg")
+    with pytest.raises(LibraryError):
+        lib.use_picture("gone", folder)

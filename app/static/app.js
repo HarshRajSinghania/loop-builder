@@ -902,15 +902,19 @@ function cardPicture(p) {
     !team && el("option", { value: "" }, "Pick a team…"),
     state.teams.map((t) => el("option", { value: t.id, selected: team && team.id === t.id }, t.name)),
     el("option", { value: "__manage" }, "Add or manage teams…"));
-  const box = group("Picture", seg("Picture", [["logo", "Theme logo"], ["team", "A team’s logo"], ["upload", "Upload…"], ["none", "None"]], kind,
+  const own = kind === "upload" && pic; // a picture of this event's own: change it, or keep it for other events
+  const ownRow = own && el("div", { class: "row" }, el("span", { class: "mono grow" }, pic.split("/").pop()),
+    el("button", { class: "btn", type: "button", on: { click: () => pickPicture((file) => { set("picture", file); renderEditor(); }) } }, "Change…"),
+    !pic.startsWith("assets/pictures/") && el("button", { class: "btn", type: "button", on: { click: () => keepPicture(pic) } }, "Keep in Pictures"));
+  const box = group("Picture", seg("Picture", [["logo", "Theme logo"], ["team", "A team’s logo"], ["upload", "A picture…"], ["none", "None"]], kind,
     async (v) => {
       state.teamPickFor = null;
-      if (v === "upload") await pickPicture((file) => set("picture", file));
+      if (v === "upload") await pickPicture((file) => { set("picture", file); renderEditor(); });
       else if (v === "team") { // straight to the only other team; else choose from the list that appears
         const others = state.teams.filter((t) => !t.home);
         if (others.length === 1) await useTeam(others[0].id); else { state.teamPickFor = `${state.loop}:${state.n}`; renderEditor(); }
       } else set("picture", v === "logo" ? "" : v);
-    }), teamPick);
+    }), teamPick, ownRow);
   box.classList.add("wide"); // four choices: a full row, so their names don't wrap
   return box;
 }
@@ -963,7 +967,8 @@ const EDITORS = {
   },
   image: (p) => [
     el("div", { class: "row" }, el("span", { class: "mono" }, p.file), el("button", { class: "btn", type: "button",
-      on: { click: () => pickPicture((file) => { ["focus", "zoom", "crop", "pan"].forEach((k) => delete P()[k]); set("file", file); renderEditor(); setupScrub({ type: "image", raw: state.draft }); }) } }, "Replace picture…")),
+      on: { click: () => pickPicture((file) => { ["focus", "zoom", "crop", "pan"].forEach((k) => delete P()[k]); set("file", file); renderEditor(); setupScrub({ type: "image", raw: state.draft }); }) } }, "Replace picture…"),
+      !String(p.file).startsWith("assets/pictures/") && el("button", { class: "btn", type: "button", on: { click: () => keepPicture(p.file) } }, "Keep in Pictures")),
     el("div", { class: "grid" },
       group("Fit", seg("Fit", [["fill", "Fill the board"], ["fit", "Fit a part"]], p.fit || "fill", (v) => { set("fit", v); renderEditor(); })),
       holdField()),
@@ -1005,7 +1010,13 @@ function renderEditor() {
   $("#editor").replaceChildren(...EDITORS[kind](p).flat().filter(Boolean));
 }
 
-async function pickPicture(make) {
+// A picture for a slide: one kept in Pictures (copied into this event), a new one added to Pictures, or a
+// file used just this once. Resolves to make(path in the event), or null when closed without one.
+function pickPicture(make) {
+  return managePictures({ choose: true }).then((file) => (file ? make(file) : null));
+}
+
+async function uploadOnce() {
   const picker = $("#picker");
   picker.value = "";
   const file = await new Promise((resolve) => {
@@ -1020,7 +1031,74 @@ async function pickPicture(make) {
   const data = await res.json();
   if (!res.ok) { flash(`Picture not added: ${data.detail}`); return null; }
   flash(`Picture added (${Math.round(data.bytes / 1024)} KB working copy)`);
-  return make(data.file);
+  return data.file;
+}
+
+const pictureSrc = (id) => `/api/library/pictures/${encodeURIComponent(id)}/image?t=${state.stamp}`;
+const usePicture = async (id) => (await api(`/api/library/pictures/${encodeURIComponent(id)}/use`, "POST")).file;
+
+// The Pictures dialog. With choose, a click on a picture uses it; without, it's for naming and removing them.
+function managePictures({ choose = false } = {}) {
+  const dialog = $("#pictures-dialog"), grid = $("#pictures-grid"), status = $("#picture-status");
+  let chosen = null;
+  const done = (file) => { chosen = file; dialog.close(); };
+  const render = async () => {
+    const pictures = await api("/api/library/pictures");
+    grid.classList.toggle("choosing", choose);
+    grid.replaceChildren(...(pictures.length ? pictures.map((pic) => el("li", {},
+      el("button", { class: "thumb", type: "button", disabled: !choose, title: choose ? `Use ${pic.name}` : pic.name,
+        "aria-label": choose ? `Use ${pic.name}` : pic.name,
+        on: { click: async () => { if (choose) done(await usePicture(pic.id)); } } },
+        el("img", { src: pictureSrc(pic.id), alt: "" })),
+      el("input", { class: "field", value: pic.name, "aria-label": `Name for ${pic.name}`,
+        on: { change: async (e) => { await api(`/api/library/pictures/${encodeURIComponent(pic.id)}`, "PUT", { name: e.target.value }); } } }),
+      el("div", { class: "row between" }, el("span", { class: "muted" }, pic.size ? `${pic.size[0]}×${pic.size[1]}` : ""),
+        el("button", { class: "btn", type: "button", on: { click: async () => {
+          await api(`/api/library/pictures/${encodeURIComponent(pic.id)}`, "DELETE");
+          status.textContent = `Removed ${pic.name}. Events that use it keep their copy.`;
+          render();
+        } } }, "Remove"))))
+      : [el("li", { class: "empty" }, "No pictures yet. Add each badge, logo or picture once; every event can use it.")]));
+  };
+  $("#pictures-intro").textContent = choose
+    ? "Pick a picture for this slide, or add one. A picture from here is copied into this event."
+    : "Badges, league logos and other pictures, kept for every event. Using one copies it into this event.";
+  $("#picture-add").textContent = choose ? "Add and use" : "Add picture";
+  $("#picture-once").hidden = !choose;
+  $("#pictures-close").textContent = choose ? "Cancel" : "Done";
+  status.textContent = "";
+  $("#picture-file").onchange = () => { // a name from the file, until one is typed
+    const f = $("#picture-file").files[0], name = $("#picture-name");
+    if (f && !name.value.trim()) name.value = f.name.replace(/\.[^.]+$/, "").replace(/[-_]+/g, " ");
+  };
+  $("#picture-add").onclick = async () => {
+    const file = $("#picture-file").files[0], name = $("#picture-name").value.trim();
+    if (!name || !file) { status.textContent = "Give the picture a name and pick its file."; return; }
+    const form = new FormData();
+    form.append("file", file); form.append("name", name); form.append("trim", $("#picture-trim").checked ? "true" : "false");
+    status.textContent = "Adding…";
+    const res = await fetch("/api/library/pictures", { method: "POST", body: form });
+    const data = await res.json();
+    if (!res.ok) { status.textContent = data.detail; return; }
+    $("#picture-name").value = ""; $("#picture-file").value = ""; $("#picture-trim").checked = false;
+    if (choose) { done(await usePicture(data.id)); return; }
+    status.textContent = `Added ${name}.`;
+    render();
+  };
+  $("#picture-once").onclick = async () => { const file = await uploadOnce(); if (file) done(file); };
+  return new Promise((resolve) => {
+    dialog.onclose = () => { if (!choose) renderEditor(); resolve(chosen); };
+    render().then(() => dialog.showModal());
+  });
+}
+
+// Keep a picture this event already has in Pictures, named from its file (renamed in Pictures if need be).
+async function keepPicture(path) {
+  const name = path.split("/").pop().replace(/\.[^.]+$/, "").replace(/[-_]+/g, " ");
+  try {
+    const kept = await api("/api/library/pictures/from-event", "POST", { path, name });
+    flash(`Kept in Pictures as “${kept.name}”`);
+  } catch (err) { flash(`Not kept: ${err.message}`); }
 }
 
 async function loadChecks() {
@@ -1165,6 +1243,7 @@ $("#offer-keep").addEventListener("click", async () => {
 
 // Settings from the editor: after a save or a new team logo, catch up with them (closing without changes doesn't).
 // Whether to offer the team theme comes from the server with the event.
+$("#open-pictures").addEventListener("click", () => managePictures());
 $("#open-settings").addEventListener("click", () => openSettings(async () => {
   const [teams, home] = await Promise.all([api("/api/teams"), api("/api/home")]);
   state.teams = teams;
