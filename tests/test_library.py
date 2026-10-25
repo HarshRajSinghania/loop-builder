@@ -176,7 +176,7 @@ def test_a_malformed_event_file_is_left_out_and_explained(lib, text):
     (lib.events_dir / "Bad").mkdir()
     (lib.events_dir / "Bad" / "event.yaml").write_text(text, encoding="utf-8")
     assert [e["name"] for e in lib.events()] == ["Good"]
-    api = TestClient(create_app(library=lib))
+    api = TestClient(create_app(library=lib), base_url="http://127.0.0.1")  # the app answers only its own host
     assert api.get("/api/home").status_code == 200
     res = api.post("/api/events/Bad/open")
     assert res.status_code == 422 and "Bad" in res.json()["detail"]  # an EventError naming the file, not a 500
