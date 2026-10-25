@@ -7,7 +7,9 @@ browser tab instead (reload and dev tools); --no-open only serves; --port picks 
 """
 
 import argparse
+import os
 import socket
+import subprocess
 import sys
 import threading
 import time
@@ -47,6 +49,16 @@ class NativeDialogs:
 
     def save_file(self, name, start=""):
         return self._dialog("SAVE", directory=start or "", save_filename=name)
+
+    def show_folder(self, path):
+        """Open a folder in Explorer or Finder: where an export just put its files."""
+        if not path or not os.path.isdir(path):
+            return False
+        if sys.platform == "win32":
+            os.startfile(path)  # pylint: disable=no-member  # Windows only
+        else:
+            subprocess.run(["open" if sys.platform == "darwin" else "xdg-open", path], check=False)
+        return True
 
     def open_package(self, start=""):
         """A .loopevent to import. The page's own file input can't offer one on a Mac: the web view filters by

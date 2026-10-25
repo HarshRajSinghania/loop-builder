@@ -862,6 +862,13 @@ def create_app(event_path=None, templates=None, library=None):
                 raise HTTPException(422, str(exc)) from exc
         return {"ok": True}
 
+    @app.get("/api/templates/count")
+    def count_templates(folder: str = ""):
+        """How many .tpl files a folder holds, for Settings to say so as a folder is typed or picked."""
+        path = Path(folder.strip()).expanduser() if folder.strip() else None
+        found = bool(path) and path.is_dir()
+        return {"found": found, "count": sum(1 for _ in path.rglob("*.tpl")) if found else 0}
+
     @app.get("/api/templates")
     def list_templates():
         """The .tpl files in the DisplayLink Plus template folder, for the Board slide's picker."""
@@ -961,10 +968,12 @@ def create_app(event_path=None, templates=None, library=None):
                     event, loops = s.event, [s.loop(i) for i in body.loops]
                 renderer = Renderer(event)  # its own renderer, so previews keep working meanwhile
                 for loop in loops:
-                    job["current"] = loop.name
+                    job["current"], job["fraction"] = loop.name, 0.0
                     paths, skipped = [], []
-                    if "wmv" in body.formats:
-                        paths += export_loop(event, loop, body.out_dir, body.preview_mp4, renderer)
+                    if "wmv" in body.formats:  # how far through this loop's frames, for the editor's progress line
+                        paths += export_loop(
+                            event, loop, body.out_dir, body.preview_mp4, renderer, lambda f: job.update(fraction=f)
+                        )
                     if "png" in body.formats:
                         if body.replace:  # an earlier, longer loop's extra stills would mix two meets in one folder
                             for old in existing_exports(loop, body.out_dir, ("png",)):

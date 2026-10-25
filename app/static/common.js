@@ -32,6 +32,11 @@ const upload = async (url, file) => {
 
 // The app window offers the system's own pickers; a browser tab (developer use) falls back to typing a path.
 const native = () => (window.pywebview && window.pywebview.api) || null;
+// An event's date (kept as 2026-10-31) the way this computer writes dates: "Sat, Oct 31, 2026".
+const niceDate = (iso) => {
+  const d = iso && new Date(`${iso}T12:00:00`);
+  return d && !isNaN(d) ? d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric" }) : iso || "";
+};
 // The app window must fit the screen: one taller than the screen hides the bottom of every page, and dialogs'
 // buttons with it. The page measures the usable screen (without the taskbar) in its own pixels, which are the
 // window's logical pixels whatever the resolution and display scaling; the app fits the window if it spills over.

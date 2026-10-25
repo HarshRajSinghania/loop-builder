@@ -34,3 +34,14 @@ def test_the_window_fits_any_screen():
     assert not spills((256, 141, 1000, 700), (0, 33, 1512, 892))
     assert spills((0, 0, 1500, 1400), (0, 33, 1512, 892)) and spills((-10, 100, 800, 600), (0, 0, 1920, 1040))
     assert first_size([Screen(width=1280, height=720)])[1] < 720 and first_size([]) == WINDOW
+
+
+def test_show_folder_opens_only_a_folder_that_exists(tmp_path, monkeypatch):
+    import app.__main__ as launcher  # pylint: disable=import-outside-toplevel
+
+    opened = []
+    monkeypatch.setattr(launcher.sys, "platform", "win32")
+    monkeypatch.setattr(launcher.os, "startfile", opened.append, raising=False)
+    dialogs = launcher.NativeDialogs()
+    assert dialogs.show_folder(str(tmp_path)) and opened == [str(tmp_path)]
+    assert not dialogs.show_folder(str(tmp_path / "missing")) and not dialogs.show_folder("") and len(opened) == 1

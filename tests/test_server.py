@@ -394,3 +394,17 @@ def test_a_visiting_team_goes_on_the_cards_that_wait_for_it(tmp_path):
     assert event["loops"][0]["slides"][0]["raw"]["card"]["lines"][-1]["text"] == "Go Hastings!"
     api.post("/api/undo")
     assert api.get("/api/event").json()["visitor"]["name"] == "Hastings"
+
+
+def test_settings_can_count_a_folders_templates_as_it_is_typed(client, tmp_path):
+    api, _ = client
+    (tmp_path / "tpl" / "sub").mkdir(parents=True)
+    for name in ("a.tpl", "sub/b.tpl", "notes.txt"):
+        (tmp_path / "tpl" / name).write_text("x")
+
+    def count(folder):
+        return api.get("/api/templates/count", params={"folder": folder}).json()
+
+    assert count(str(tmp_path / "tpl")) == {"found": True, "count": 2}
+    assert count(str(tmp_path / "missing")) == {"found": False, "count": 0}
+    assert count("") == {"found": False, "count": 0}

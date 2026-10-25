@@ -55,7 +55,8 @@ async function openSettings(onSaved) {
   $("#set-export").value = s.export_dir || "";
   $("#set-lanes").value = String(s.pool_lanes ?? 8);
   $("#set-first").value = String(s.first_lane ?? 1);
-  $("#template-count").textContent = settingsHome.templates_found ? `${settingsHome.template_count} templates found` : "Folder not found";
+  $("#template-count").textContent = !s.templates ? "Not set yet"
+    : settingsHome.templates_found ? `${settingsHome.template_count} templates found` : "Folder not found";
   $("#template-count").className = "muted";
   $("#settings-status").textContent = "";
   $("#version").textContent = `Loop Builder ${settingsHome.version}`;
@@ -80,7 +81,24 @@ $("#open-about").addEventListener("click", async () => {
   $("#about-notices").textContent = a.notices || "See THIRD_PARTY_NOTICES.md in the project.";
   $("#about").showModal();
 });
-$("#settings").querySelectorAll("[data-pick]").forEach((b) => b.addEventListener("click", () => pickFolder($(`#${b.dataset.pick}`))));
+// The template folder's line follows the field as it's typed or picked, so a wrong folder shows before Settings closes.
+let countTimer = null;
+function countTemplates() {
+  clearTimeout(countTimer);
+  countTimer = setTimeout(async () => {
+    const folder = $("#set-templates").value.trim(), note = $("#template-count");
+    if (!folder) { note.textContent = "Not set yet"; note.className = "muted"; return; }
+    try {
+      const { found, count } = await api(`/api/templates/count?folder=${encodeURIComponent(folder)}`);
+      note.textContent = !found ? "Folder not found" : count ? `${count} templates found` : "No .tpl templates in this folder";
+      note.className = found && count ? "muted" : "warn";
+    } catch (err) { /* keep the last line */ }
+  }, 300);
+}
+$("#set-templates").addEventListener("input", countTemplates);
+$("#settings").querySelectorAll("[data-pick]").forEach((b) => b.addEventListener("click", async () => {
+  if (await pickFolder($(`#${b.dataset.pick}`)) && b.dataset.pick === "set-templates") countTemplates();
+}));
 // A sample welcome card in the chosen colours, drawn by the real renderer as you pick them.
 const teamLook = () => Object.fromEntries(COLOURS.map(([k]) => [k, $(`#team-${k}`).value.toUpperCase()]));
 let lookTimer = null;

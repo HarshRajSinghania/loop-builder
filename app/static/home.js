@@ -19,6 +19,7 @@ async function load() {
   home = await api("/api/home");
   $("#team").textContent = home.settings.team || "";
   $("#setup").hidden = home.templates_found;
+  $("#team-setup").hidden = !!(home.settings.team && home.settings.logo); // a new install: the team first
   if (home.update) {
     $("#update").hidden = false;
     $("#update").replaceChildren(`Loop Builder ${home.update.version} is available (you have ${home.version}). `,
@@ -43,7 +44,7 @@ function renderEvents() {
     el("img", { src: `/api/events/${encodeURIComponent(e.slug)}/thumb.png?t=${e.edited}`, alt: "", loading: "lazy" }),
     el("div", { class: "ev-main" },
       el("a", { href: "#", class: "ev-name", on: { click: (ev) => { ev.preventDefault(); openEvent(e.slug); } } }, e.name),
-      el("span", { class: "muted" }, [e.date, edited(e.edited)].filter(Boolean).join(" · ")),
+      el("span", { class: "muted" }, [niceDate(e.date), edited(e.edited)].filter(Boolean).join(" · ")),
       el("span", { class: "row" }, e.loops.map((l) => el("span", { class: "chip" }, `${l.name} · ${l.slides} slide${l.slides === 1 ? "" : "s"}`)))),
     el("div", { class: "row" },
       el("button", { class: "btn btn-primary", type: "button", on: { click: () => openEvent(e.slug) } }, "Open"),
@@ -60,7 +61,11 @@ async function openEvent(slug) {
 
 async function create(starter) {
   const name = $("#new-name").value.trim();
-  if (!name) { $("#new-name").focus(); status("Give the event a name first."); return; }
+  if (!name) { // said at the field itself, where the name goes
+    $("#new-name").setCustomValidity("Give the event a name first.");
+    $("#new-name").reportValidity();
+    return;
+  }
   try {
     const visitor = $("#new-visitor").value || null;
     const { slug } = await api("/api/events", "POST", { name, date: $("#new-date").value || today(), starter, visitor });
@@ -117,6 +122,7 @@ $("#import-file").addEventListener("change", async (ev) => {
   if (file) await imported(() => upload("/api/events/import", file));
 });
 $("#search").addEventListener("input", renderEvents);
+$("#new-name").addEventListener("input", (e) => e.target.setCustomValidity(""));
 $("#new-date").value = today();
 
 // First run: the template folder
@@ -130,6 +136,7 @@ $("#setup-save").addEventListener("click", async () => {
 });
 
 // Settings
-$("#open-settings").addEventListener("click", () => openSettings(async () => { status("Settings saved."); await load(); }));
+$("#open-settings").addEventListener("click", () => { status(""); openSettings(async () => { status("Settings saved."); await load(); }); });
+$("#team-setup-go").addEventListener("click", () => $("#open-settings").click());
 
 load();

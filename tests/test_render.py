@@ -302,3 +302,18 @@ def test_a_placeholder_team_name_blocks_an_export_until_it_is_typed_over(tmp_pat
         (1, "still says “VISITING TEAM”: type the team’s name over it"),
         (2, "still says “team name”: type the team’s name over it"),
     ]
+
+
+def test_a_qr_slide_without_a_full_link_shows_where_its_code_will_go(tmp_path):
+    event_file = tmp_path / "qr.yaml"
+    event_file.write_text(
+        "event: Q\nloops:\n  - name: L\n    slides:\n      - qr: {url: 'https://', heading: [HEAT, SHEET]}\n"
+        "      - qr: {url: 'https://example.org/heat-sheet', heading: [HEAT, SHEET]}\n",
+        encoding="utf-8",
+    )
+    event = load_event(event_file)
+    unfinished, finished = (render_slide(event, event.loops[0], i).convert("RGB") for i in (0, 1))
+    assert not zxingcpp.read_barcodes(unfinished)  # the placeholder is no code at all, so nothing scans to "https://"
+    assert [b.text for b in zxingcpp.read_barcodes(finished)] == ["https://example.org/heat-sheet"]
+    errors = [i for i in run_checks(event) if i.level == "error"]
+    assert [e.slide for e in errors] == [1]  # and the export still stops until the link is there
