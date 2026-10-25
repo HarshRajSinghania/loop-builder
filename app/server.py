@@ -255,7 +255,7 @@ class ExportBody(BaseModel):
     preview_mp4: bool = False
 
 
-class Open:
+class Open:  # pylint: disable=too-few-public-methods  # a holder for the open event
     """The event open in the editor, if any."""
 
     session = None
@@ -282,7 +282,7 @@ def create_app(event_path=None, templates=None, library=None):
             target=lambda: update.update(check_for_update(VERSION, RELEASES_URL) or {}), daemon=True
         ).start()
 
-    class _Current:  # `s.` below always means the open event
+    class _Current:  # pylint: disable=too-few-public-methods  # `s.` below always means the open event
         def __getattr__(self, name):
             if current.session is None:
                 raise HTTPException(409, "no event is open")
@@ -798,7 +798,8 @@ def create_app(event_path=None, templates=None, library=None):
 
     @app.put("/api/event/templates")
     def set_event_templates(body: FolderBody):
-        """The DisplayLink Plus template folder for this whole event (saved in its file); optionally the app default too."""
+        """The DisplayLink Plus template folder for this whole event (saved in its file); optionally the app default
+        too."""
         folder = Path(body.folder).expanduser()
         if not folder.is_dir():
             raise HTTPException(422, f"folder not found: {body.folder}")
@@ -813,7 +814,8 @@ def create_app(event_path=None, templates=None, library=None):
     @app.put("/api/panels")
     def save_panel(body: PanelBody):
         x, y, w, h = (list(body.panel) + [0, 0, 0, 0])[:4]
-        if w < 40 or h < 30 or x < 0 or y < 0 or x + w > s.event.width or y + h > s.event.height:
+        on_board = 0 <= x and 0 <= y and x + w <= s.event.width and y + h <= s.event.height
+        if w < 40 or h < 30 or not on_board:
             raise HTTPException(422, f"the panel must fit inside the {s.event.width} × {s.event.height} board")
         name = Path(body.template).name
         with s.lock:

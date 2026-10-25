@@ -72,7 +72,7 @@ def test_copy_a_slide_into_another_loop(client):
     assert api.post("/api/copy", json={"loop": 2, "n": 0, "target": 0}).status_code == 200
     event = api.get("/api/event").json()
     copied, original = event["loops"][0]["slides"][-1], event["loops"][2]["slides"][0]
-    assert copied["raw"] == {k: v for k, v in original["raw"].items()}  # same content
+    assert copied["raw"] == original["raw"]  # same content
     assert not copied["linked"] and "ref" not in next(iter(copied["raw"].values()))
 
 

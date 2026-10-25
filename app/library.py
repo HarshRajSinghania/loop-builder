@@ -161,7 +161,7 @@ def _slug(name):
     return " ".join(cleaned.split())[:80] or "Event"
 
 
-class Library:
+class Library:  # pylint: disable=too-many-public-methods  # the one way in to the Loop Builder folder
     """The Loop Builder folder: settings, the team logo and the events."""
 
     def __init__(self, root=None):

@@ -8,6 +8,7 @@ import zxingcpp
 from PIL import Image
 
 from loopgen import export_loop, export_pngs, load_event, render_slide, run_checks
+from loopgen.slides import Renderer
 from loopgen.uploads import prepare_upload, shrink
 
 EXAMPLE = Path(__file__).resolve().parent.parent / "examples" / "dual-meet" / "event.yaml"
@@ -194,7 +195,6 @@ def test_pan_follows_the_arrow_in_fill_and_fit(tmp_path):
 def test_box_to_value_to_renderer_crop_matches_to_the_pixel():
     """The editor turns a Fill box into focus and zoom; the renderer must crop that same box back."""
     from loopgen.event import Event  # pylint: disable=import-outside-toplevel
-    from loopgen.slides import Renderer  # pylint: disable=import-outside-toplevel
 
     r = Renderer(Event("t", Path("x.yaml"), 320, 176, {}, [], Path(".")))
     aspect = 320 / 176
@@ -216,7 +216,6 @@ def test_transparent_parts_of_a_template_are_black_on_the_board(tmp_path, monkey
     their raw colour (often white) and lettering on the Sections boards turned into blocks."""
     from loopgen import tpl  # pylint: disable=import-outside-toplevel
     from loopgen.event import Event  # pylint: disable=import-outside-toplevel
-    from loopgen.slides import Renderer  # pylint: disable=import-outside-toplevel
 
     edge = Image.new("RGBA", (320, 176), (0, 0, 0, 0))
     edge.putpixel((10, 10), (255, 255, 255, 64))  # a soft, mostly transparent white edge pixel
@@ -233,7 +232,8 @@ def test_lanes_slide_draws_every_lane_and_flags_a_missing_logo(tmp_path):
     event_file = tmp_path / "lanes.yaml"
     event_file.write_text(
         "event: L\nloops:\n  - name: L\n    slides:\n"
-        "      - lanes: {title: Welcome!, count: 10, first: 0, lanes: [{name: PINE RIDGE, logo: pine-ridge.png}, {name: 'NORTH|HARBOR'}]}\n"
+        "      - lanes: {title: Welcome!, count: 10, first: 0,\n"
+        "                lanes: [{name: PINE RIDGE, logo: pine-ridge.png}, {name: 'NORTH|HARBOR'}]}\n"
         "      - lanes: {count: 4, lanes: [{name: PARK, logo: missing.png}]}\n",
         encoding="utf-8",
     )
@@ -257,8 +257,6 @@ def test_lanes_split_into_pages_and_loops_with_a_countdown_end_cleanly(tmp_path)
     event = load_event(event_file)
     welcome, warmup = event.loops
     assert welcome.repeat and not warmup.repeat  # older files' repeat setting is ignored
-    from loopgen.slides import Renderer
-
     clip = Renderer(event).render(welcome.slides[0], 2)
     assert clip.frames == 2 * 2 * 30 + 15  # two pages of 2 s, with a half-second blend between them
     page1, page2 = render_slide(event, welcome, 0), render_slide(event, welcome, 0, at=3)
