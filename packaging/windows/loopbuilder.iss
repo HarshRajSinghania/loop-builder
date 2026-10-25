@@ -38,6 +38,7 @@ ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayIcon={app}\Loop Builder.exe
 SetupIconFile=..\icons\loop-builder.ico
 MinVersion=10.0
+; Local builds only: iscc /DSign, with a sign tool named "signtool" set up in Inno Setup (CI signs with Azure).
 #ifdef Sign
 SignTool=signtool
 SignedUninstaller=yes
