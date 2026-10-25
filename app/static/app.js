@@ -446,11 +446,12 @@ function lineRows(lines, max, withSize, shown = Infinity, layoutName = "") {
   return box;
 }
 
-const LAYOUTS = [["stack", "Stack"], ["logo-center", "Logo center"], ["text-qr", "Text + QR"], ["banner", "Banner"]];
+const LAYOUTS = [["stack", "Stack"], ["logo-center", "Logo center"], ["text-qr", "Text + QR"], ["text-picture", "Text + picture"], ["banner", "Banner"]];
 const LAYOUT_INFO = {
   "stack": { max: 4, holds: "1–4 lines" },
   "logo-center": { max: 4, holds: "Lines + team logo" },
   "text-qr": { max: 4, holds: "Lines + a QR code" },
+  "text-picture": { max: 4, holds: "Lines + a picture beside them" },
   "banner": { max: 2, holds: "2 lines, thick bars" },
 };
 // QR links are kept exactly as typed (some links only work with their capitals); no autocapitalise or autocorrect.
@@ -487,6 +488,8 @@ function layoutNote(p) {
   if (layout === "banner" && n > 2) return ["warn", `A banner shows 2 lines. ${n === 3 ? "Line 3 is" : `Lines 3–${n} are`} kept but hidden; pick another layout to show them again.`];
   if (layout === "logo-center") return ["muted", "The team logo sits under the big (L) line. Set the logo in Theme if the card shows none."];
   if (layout === "text-qr") return ["muted", "Lines sit on the left and shrink to fit beside the code; keep them short."];
+  if (layout === "text-picture" && (!p.picture || p.picture === "none")) return ["warn", "Text + picture needs a picture. Pick one under “Picture” below."];
+  if (layout === "text-picture") return ["muted", "Lines sit beside the picture and shrink to fit; keep them short."];
   return ["muted", ""];
 }
 const miniLayout = (layout) => {
@@ -494,6 +497,7 @@ const miniLayout = (layout) => {
   const primary = (state.event.theme || {}).primary || DEFAULTS.primary; // the event's own colour, as on its slides
   if (layout === "logo-center") return el("span", { class: "mini" }, bar(30, 3), bar(52, 7, "#ECEEF0"), bar(12, 12, primary), bar(44, 3));
   if (layout === "text-qr") return el("span", { class: "mini", style: "flex-direction:row;gap:5px" }, el("span", { style: "display:flex;flex-direction:column;gap:3px;align-items:center" }, bar(34, 3), bar(40, 7, "#ECEEF0"), bar(30, 3)), bar(26, 26, "#FFFFFF"));
+  if (layout === "text-picture") return el("span", { class: "mini", style: "flex-direction:row;gap:5px" }, el("span", { style: "display:flex;flex-direction:column;gap:3px;align-items:center" }, bar(34, 3), bar(40, 7, "#ECEEF0"), bar(30, 3)), bar(22, 22, primary));
   if (layout === "banner") return el("span", { class: "mini", style: "padding:0;gap:4px" }, bar(84, 4, primary), bar(60, 9, "#ECEEF0"), bar(38, 3), bar(84, 4, primary));
   return el("span", { class: "mini" }, bar(34, 3), bar(56, 8, "#ECEEF0"), bar(42, 3));
 };
@@ -857,11 +861,13 @@ async function manageTeams(after) {
 
 // A logo-center card's picture: the theme logo, a team's logo from Teams (a visitor's welcome card shows theirs,
 // not ours), an uploaded picture, or none. A team's logo is copied into the event, as a lane's is.
-function cardPicture(p) {
-  const pic = p.picture || "";
+function cardPicture(p, layout = "logo-center") {
+  const logoCenter = layout === "logo-center"; // the one layout whose picture is the theme logo unless changed
+  const pic = p.picture || (logoCenter ? "" : "none");
   const team = pic.startsWith("assets/teams/") ? state.teams.find((t) => pic.endsWith(`/${t.logo}`)) : null;
   const choosing = state.teamPickFor === `${state.loop}:${state.n}`; // "A team's logo" pressed, no team picked yet
   const kind = pic.startsWith("assets/teams/") || choosing ? "team" : !pic || pic === "logo" ? "logo" : pic === "none" ? "none" : "upload";
+  const shown = kind !== "none";
   const useTeam = async (id) => {
     try { set("picture", (await api(`/api/teams/${encodeURIComponent(id)}/use`, "POST")).logo); }
     catch (err) { flash(err.message); return; }
@@ -886,8 +892,13 @@ function cardPicture(p) {
       else if (v === "team") { // straight to the only other team; else choose from the list that appears
         const others = state.teams.filter((t) => !t.home);
         if (others.length === 1) await useTeam(others[0].id); else { state.teamPickFor = `${state.loop}:${state.n}`; renderEditor(); }
-      } else set("picture", v === "logo" ? "" : v);
-    }), teamPick, ownRow);
+      } else set("picture", logoCenter ? (v === "logo" ? "" : v) : (v === "none" ? "" : v));
+      renderEditor();
+    }), teamPick, ownRow,
+    shown && layout === "text-picture" && seg("Picture side", [["left", "Left of the lines"], ["right", "Right of the lines"]], p.picture_side || "right",
+      (v) => set("picture_side", v === "right" ? "" : v)),
+    shown && layout !== "text-picture" && seg("Where the picture sits", [["above", "Above the lines"], ["middle", "Under the big line"], ["below", "Below the lines"]],
+      p.picture_place || "middle", (v) => set("picture_place", v === "middle" ? "" : v)));
   box.classList.add("wide"); // four choices: a full row, so their names don't wrap
   return box;
 }
@@ -910,7 +921,7 @@ const EDITORS = {
         note && el("p", { class: noteKind, role: "status" }, note)),
       group(`Lines · ${Math.min(p.lines.length, info.max)} of ${info.max} shown`, lineRows(p.lines, 4, true, info.max, layoutName)),
       el("div", { class: "grid" },
-        layout === "logo-center" && cardPicture(p),
+        cardPicture(p, layout),
         layout === "text-qr" && linkField("QR link", p.qr, "qr", { id: "qr-link" }),
         layout === "text-qr" && el("label", { class: "check-row" }, el("input", { type: "checkbox", checked: !!p.show_url,
           on: { change: (e) => { set("show_url", e.target.checked || ""); renderEditor(); } } }), "Show the link under the QR"),
@@ -979,7 +990,34 @@ function renderEditor() {
     $("#editor").replaceChildren(el("p", { class: "muted" }, `This slide is linked to “${p.ref}”. Edit it where it's defined and every loop that uses it changes.`));
     return;
   }
-  $("#editor").replaceChildren(...EDITORS[kind](p).flat().filter(Boolean));
+  $("#editor").replaceChildren(...EDITORS[kind](p).flat().filter(Boolean), extraPictures(p));
+}
+
+// Extra pictures over any slide: a badge, league logos, the duck in a corner. As many as wanted, each placed
+// on a 3×3 grid of the board and sized; drawn in order, so a later one sits on top.
+const PLACES = [["top-left", "↖"], ["top", "↑"], ["top-right", "↗"], ["left", "←"], ["center", "•"], ["right", "→"],
+  ["bottom-left", "↙"], ["bottom", "↓"], ["bottom-right", "↘"]];
+const PLACE_NAMES = { "top-left": "Top left", top: "Top", "top-right": "Top right", left: "Left", center: "Centre",
+  right: "Right", "bottom-left": "Bottom left", bottom: "Bottom", "bottom-right": "Bottom right" };
+function extraPictures(p) {
+  const list = Array.isArray(p.badges) ? p.badges : [];
+  const save = (next) => { set("badges", next.length ? next : ""); renderEditor(); };
+  const edit = (i, key, value) => save(list.map((b, j) => (j === i ? { ...b, [key]: value } : b)));
+  const rows = list.map((b, i) => el("div", { class: "extra-pic" },
+    el("img", { class: "lane-logo", alt: "", src: `/api/asset?path=${encodeURIComponent(b.file)}&t=${state.stamp}` }),
+    el("span", { class: "place-grid", role: "group", "aria-label": `Where picture ${i + 1} sits` }, PLACES.map(([v, arrow]) =>
+      el("button", { type: "button", title: PLACE_NAMES[v], "aria-label": PLACE_NAMES[v], "aria-pressed": String((b.place || "top-right") === v),
+        on: { click: () => edit(i, "place", v) } }, arrow))),
+    seg(`Size of picture ${i + 1}`, [["S", "S"], ["M", "M"], ["L", "L"], ["XL", "XL"]], b.size || "M", (v) => edit(i, "size", v)),
+    el("button", { class: "btn", type: "button", on: { click: () => pickPicture((file) => edit(i, "file", file)) } }, "Change…"),
+    el("button", { class: "btn icon", type: "button", "aria-label": `Remove picture ${i + 1}`, title: "Remove",
+      on: { click: () => save(list.filter((_, j) => j !== i)) } }, "✕")));
+  const taken = new Set(list.map((b) => b.place || "top-right"));
+  const nextPlace = ["top-right", "top-left", "bottom-right", "bottom-left"].find((c) => !taken.has(c)) || "top-right";
+  return group(`Extra pictures${list.length ? ` · ${list.length}` : ""}`, ...rows,
+    el("p", { class: "muted" }, "Small pictures over this slide, like an app badge or league logos. Add as many as you like."),
+    el("button", { class: "btn", type: "button", style: "align-self:flex-start",
+      on: { click: () => pickPicture((file) => save([...list, { file, place: nextPlace, size: "M" }])) } }, "+ Add a picture"));
 }
 
 // A picture for a slide: one kept in Pictures (copied into this event), a new one added to Pictures, or a

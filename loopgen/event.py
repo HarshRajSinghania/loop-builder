@@ -9,7 +9,7 @@ from PIL import ImageColor
 
 SLIDE_TYPES = ("board", "card", "qr", "image", "countdown", "crawl", "lanes")
 TIMED = ("countdown", "crawl")
-COMMON = ("id", "hold", "fade", "notes")
+COMMON = ("id", "hold", "fade", "notes", "badges")
 DEFAULT_THEME = {
     "primary": "#CC0202",
     "accent": "#F0C878",
@@ -34,6 +34,7 @@ class Slide:
     hold: float = None
     fade: float = None
     notes: str = None
+    badges: list = None  # extra pictures over any slide (badges, league logos): [{file, place, size}]
 
     @property
     def timed(self):
@@ -154,6 +155,7 @@ def load_event(path, templates=None):
                     s.hold if s.hold is not None else target.hold,
                     s.fade if s.fade is not None else target.fade,
                     s.notes or target.notes,
+                    copy.deepcopy(s.badges if s.badges is not None else target.badges),
                 )
     return Event(
         data.get("event") or path.stem,
