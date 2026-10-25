@@ -3,4 +3,4 @@ pyinstaller>=6.22.3,<7
 pytest
 pylint
 black
-httpx
+httpx2  # what starlette.testclient (FastAPI's TestClient) uses; plain httpx is deprecated there
