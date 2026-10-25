@@ -430,9 +430,13 @@ class Renderer:
     def _qr(self, p, frames):
         img = self.blank()
         d = ImageDraw.Draw(img)
-        code, px = draw.qr_image(p["url"], self.H - 12)
-        if px < 3:
-            self.warn(f"QR has {px} px per module: link too long to scan from the stands")
+        linked = draw.full_url(p.get("url"))
+        if linked:
+            code, px = draw.qr_image(p["url"], self.H - 12)
+            if px < 3:
+                self.warn(f"QR has {px} px per module: link too long to scan from the stands")
+        else:  # no full link yet: a code for "https://" would scan to nothing, so hold its place and say what's missing
+            code = self.qr_placeholder(self.H - 28)
         right = p.get("side", "right") == "right"
         qx = self.W - code.width - 6 if right else 6
         img.paste(code, (qx, (self.H - code.height) // 2))
@@ -443,7 +447,7 @@ class Renderer:
         d.rectangle((cx - 40, 10, cx + 40, 13), fill=self.event.color("primary"))
         heading = [{"text": t, "style": "bold", "size": "L"} for t in p.get("heading", [])]
         caption = [{"text": t, "size": "S"} for t in p.get("caption", ["Scan with your", "phone camera"])]
-        if p.get("show_url", True):
+        if p.get("show_url", True) and linked:
             caption.append({"text": draw.short_url(p["url"]), "size": "S", "_px": 11, "_link": True})
         weights = []
         for l in heading + caption:

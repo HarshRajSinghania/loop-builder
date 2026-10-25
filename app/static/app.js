@@ -52,7 +52,7 @@ async function loadEvent(keepEditor = false) {
   if (state.templatesFor !== templatesKey()) await loadTemplates(); // the folder changed, or went missing or came back
   $("#event-name").replaceChildren(el("a", { href: "/" }, "Events"), " / ",
     el("button", { class: "crumb-edit", type: "button", title: "Rename the event, change its date or its visiting team", on: { click: openDetails } },
-      `${state.event.name}${state.event.date ? " · " + state.event.date : ""}`));
+      `${state.event.name}${state.event.date ? " · " + niceDate(state.event.date) : ""}`));
   renderTabs();
   renderLoop();
   $("#undo").disabled = !state.event.can_undo;
@@ -121,7 +121,9 @@ function markIssues() {
     const loop = state.event.loops[i];
     tab.classList.toggle("has-error", !!loop && state.issues.some((x) => x.level === "error" && x.loop === loop.name));
   });
-  $("#slide-errors").textContent = errors(state.n).map((i) => `✗ ${i.message[0].toUpperCase()}${i.message.slice(1)}`).join("  ");
+  const said = (i) => /^QR/.test(i.message); // the scan check line beside it already says what's wrong with a QR
+  $("#slide-errors").textContent = errors(state.n).filter((i) => !said(i))
+    .map((i) => `✗ ${i.message[0].toUpperCase()}${i.message.slice(1)}`).join("  ");
 }
 
 // ---------- strip editing: add, move, duplicate, delete ----------
@@ -796,7 +798,15 @@ function lanesEditor(p) {
     const match = state.teams.find((t) => lane.logo && lane.logo.endsWith(`/${t.logo}`));
     const pick = el("select", { class: "field", "aria-label": `Team for lane ${first + i}`, on: { change: async (e) => {
       const id = e.target.value;
-      if (id === "__manage") { e.target.value = match ? match.id : ""; manageTeams(); return; }
+      if (id === "__manage") { // a team added from this lane's list goes in this lane, if it's still empty
+        e.target.value = match ? match.id : "";
+        manageTeams(afterAdding(async (team) => {
+          if (P().lanes[i] && P().lanes[i].name) return;
+          P().lanes[i] = await api(`/api/teams/${encodeURIComponent(team.id)}/use`, "POST");
+          previewDraft(); renderEditor();
+        }));
+        return;
+      }
       if (!id) { P().lanes[i] = {}; previewDraft(); renderEditor(); return; }
       try { P().lanes[i] = await api(`/api/teams/${encodeURIComponent(id)}/use`, "POST"); }
       catch (err) { flash(err.message); return; }
@@ -828,6 +838,18 @@ function lanesEditor(p) {
   ];
 }
 
+// Teams opened from a team list: when exactly one team was added there, `use` it where the list was.
+function afterAdding(use) {
+  const before = new Set(state.teams.map((t) => t.id));
+  return () => {
+    const added = state.teams.filter((t) => !before.has(t.id));
+    if (added.length === 1) use(added[0]);
+  };
+}
+
+$("#team-pick").addEventListener("click", () => $("#team-file").click()); // the app's own button for the file picker
+$("#team-file").addEventListener("change", (e) => { $("#team-file-name").textContent = e.target.files[0]?.name || "No logo chosen"; });
+
 // The team library: logos kept for every event.
 async function manageTeams(after) {
   const dialog = $("#teams-dialog");
@@ -854,7 +876,8 @@ async function manageTeams(after) {
     form.append("file", file); form.append("name", name); form.append("trim", $("#team-trim").checked ? "true" : "false");
     const res = await fetch("/api/teams", { method: "POST", body: form });
     if (!res.ok) { $("#team-status").textContent = (await res.json()).detail; return; }
-    $("#team-name").value = ""; $("#team-file").value = ""; $("#team-status").textContent = `Added ${name}.`;
+    $("#team-name").value = ""; $("#team-file").value = ""; $("#team-file-name").textContent = "No logo chosen";
+    $("#team-status").textContent = `Added ${name}.`;
     render();
   };
 }
@@ -875,7 +898,11 @@ function cardPicture(p, layout = "logo-center") {
     renderEditor();
   };
   const teamPick = kind === "team" && el("select", { class: "field", "aria-label": "Team whose logo the card shows", on: { change: (e) => {
-    if (e.target.value === "__manage") { e.target.value = team ? team.id : ""; manageTeams(); return; }
+    if (e.target.value === "__manage") { // a team added from here becomes the card's picture
+      e.target.value = team ? team.id : "";
+      manageTeams(afterAdding((added) => useTeam(added.id)));
+      return;
+    }
     if (e.target.value) useTeam(e.target.value);
   } } },
     !team && el("option", { value: "" }, "Pick a team…"),
@@ -919,7 +946,8 @@ const EDITORS = {
           if (v === "text-qr" && !isFullUrl(P().qr)) document.querySelector("#qr-link")?.focus();
         } } }, miniLayout(v), name, el("small", { class: "muted" }, LAYOUT_INFO[v].holds)))),
         note && el("p", { class: noteKind, role: "status" }, note)),
-      group(`Lines · ${Math.min(p.lines.length, info.max)} of ${info.max} shown`, lineRows(p.lines, 4, true, info.max, layoutName)),
+      group(p.lines.length > info.max ? `Lines · ${info.max} of ${p.lines.length} shown` : `Lines · up to ${info.max}`,
+        lineRows(p.lines, 4, true, info.max, layoutName)),
       el("div", { class: "grid" },
         cardPicture(p, layout),
         layout === "text-qr" && linkField("QR link", p.qr, "qr", { id: "qr-link" }),
@@ -1130,7 +1158,11 @@ $("#open-export").addEventListener("click", () => {
     el("input", { type: "checkbox", checked: true, value: i, "aria-label": `Export ${lp.name}` }),
     el("span", {}, lp.name, " ", el("span", { class: "mono" }, `· ${clock(lp.length)}`)),
     el("span", { class: "muted", id: `job-${i}` }, ""))));
-  api("/api/home").then((h) => { if (!$("#out-dir").value) $("#out-dir").value = h.settings.export_dir || ""; });
+  api("/api/home").then((h) => { // the last folder used, else an Exports folder in the Loop Builder folder
+    const sep = h.folder.includes("\\") ? "\\" : "/";
+    if (!$("#out-dir").value) $("#out-dir").value = h.settings.export_dir || `${h.folder}${sep}Exports`;
+  });
+  $("#show-export").hidden = true;
   $("#export-status").textContent = "";
   $("#export").showModal();
 });
@@ -1172,7 +1204,8 @@ $("#run-export").addEventListener("click", async () => {
     try { job = await api("/api/export", "POST", { loops, out_dir: outDir, formats, preview_mp4: $("#mp4").checked, replace }); }
     catch (err) { $("#export-status").textContent = err.message; return; }
     while (job.state === "running") {
-      $("#export-status").textContent = `Rendering ${job.current || "…"} (${job.done.length} of ${job.total} done)`;
+      const through = job.fraction ? ` · ${Math.floor(job.fraction * 100)}%` : ""; // how far through this loop
+    $("#export-status").textContent = `Rendering ${job.current || "…"}${through} (${job.done.length} of ${job.total} done)`;
       await new Promise((r) => setTimeout(r, 500));
       job = await api(`/api/jobs/${job.id}`);
     }
@@ -1183,6 +1216,8 @@ $("#run-export").addEventListener("click", async () => {
     if (i >= 0) $(`#job-${i}`).textContent = `Saved ${d.files.length} file${d.files.length === 1 ? "" : "s"} · ${(d.bytes / 1e6).toFixed(1)} MB${skipped}`;
   });
   $("#export-status").textContent = job.state === "done" ? `Done in ${job.seconds} s. Files are in ${outDir}.` : `Export failed: ${job.error}`;
+  $("#show-export").hidden = !(job.state === "done" && native() && native().show_folder); // the app window can open it
+  $("#show-export").onclick = () => native().show_folder(outDir);
 });
 
 // ---------- undo, theme, versions, linking ----------
@@ -1285,7 +1320,8 @@ function fillVisitorPick() {
 $("#details-visitor").addEventListener("change", (e) => {
   if (e.target.value !== "__manage") return;
   fillVisitorPick();
-  manageTeams(fillVisitorPick); // back to this dialog's choice, with any team just added
+  const pickNew = afterAdding((team) => { $("#details-visitor").value = team.id; }); // a team added here is the pick
+  manageTeams(() => { fillVisitorPick(); pickNew(); });
 });
 function openDetails() {
   fillVisitorPick();

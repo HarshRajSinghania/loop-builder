@@ -367,3 +367,18 @@ def test_extra_pictures_go_over_any_slide_where_placed(tmp_path):
     found = [(i.slide, i.message) for i in run_checks(event)]
     assert any(s == 4 and "extra picture not found" in m for s, m in found)
     assert render_slide(event, loop, 3).size == (320, 176)  # drawn without it
+
+
+def test_a_qr_slide_without_a_full_link_shows_where_its_code_will_go(tmp_path):
+    event_file = tmp_path / "qr.yaml"
+    event_file.write_text(
+        "event: Q\nloops:\n  - name: L\n    slides:\n      - qr: {url: 'https://', heading: [HEAT, SHEET]}\n"
+        "      - qr: {url: 'https://example.org/heat-sheet', heading: [HEAT, SHEET]}\n",
+        encoding="utf-8",
+    )
+    event = load_event(event_file)
+    unfinished, finished = (render_slide(event, event.loops[0], i).convert("RGB") for i in (0, 1))
+    assert not zxingcpp.read_barcodes(unfinished)  # the placeholder is no code at all, so nothing scans to "https://"
+    assert [b.text for b in zxingcpp.read_barcodes(finished)] == ["https://example.org/heat-sheet"]
+    errors = [i for i in run_checks(event) if i.level == "error"]
+    assert [e.slide for e in errors] == [1]  # and the export still stops until the link is there
