@@ -143,3 +143,15 @@ def test_pictures_are_kept_for_every_event_and_copied_into_one_on_use(lib, tmp_p
         lib.add_picture("  ", tmp_path / "duck.jpg")
     with pytest.raises(LibraryError):
         lib.use_picture("gone", folder)
+
+
+def test_importing_a_renamed_events_package_tells_the_copy_apart(lib, tmp_path):
+    """A renamed event keeps its first folder: checking folder names alone, the first import shared its name."""
+    slug = lib.create("Round 4", "blank")
+    path = lib.event_file(slug)
+    path.write_text(
+        path.read_text(encoding="utf-8").replace("event: Round 4", "event: Round 4 renamed"), encoding="utf-8"
+    )
+    package = lib.export_package(slug, tmp_path / "Round 4 renamed")
+    names = [load_event(lib.event_file(lib.import_package(package))).name for _ in range(2)]
+    assert names == ["Round 4 renamed (2)", "Round 4 renamed (3)"]

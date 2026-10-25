@@ -405,6 +405,16 @@ class Library:  # pylint: disable=too-many-public-methods  # the one way in to t
             )
         return sorted(found, key=lambda e: e["edited"], reverse=True)
 
+    def _free_name(self, name):
+        """A name no event here has, and a free folder for it: "<name> (2)" when an event is called that or has that
+        folder. Both count: a renamed event keeps the folder of its first name."""
+        taken = {str(e["name"]).casefold() for e in self.events()}
+        base, n = _slug(name), 2
+        new, folder = name, self.events_dir / base
+        while folder.exists() or new.casefold() in taken:
+            new, folder, n = f"{name} ({n})", self.events_dir / f"{base} ({n})", n + 1
+        return new, folder
+
     def _free_folder(self, name):
         base = _slug(name)
         folder, n = self.events_dir / base, 2
@@ -504,11 +514,10 @@ class Library:  # pylint: disable=too-many-public-methods  # the one way in to t
                     raise LibraryError(f"unsafe path in package: {n}")
             data = yaml.safe_load(z.read("event.yaml")) or {}
             name = str(data.get("event") or Path(package).stem)
-            folder = self._free_folder(name)
+            new, folder = self._free_name(name)
             z.extractall(folder)
-        clash = folder.name[len(_slug(name)) :]  # " (2)" when an event of that name is already here
-        if clash:  # so the home screen tells the two apart, as its folder does
+        if new != name:  # "<name> (2)", so the home screen tells the two apart
             path = folder / "event.yaml"
-            data["event"] = name + clash
+            data["event"] = new
             path.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding="utf-8")
         return folder.name
