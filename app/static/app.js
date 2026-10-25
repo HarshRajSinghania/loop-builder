@@ -86,7 +86,7 @@ function renderLoop() {
         on: { error: async (e) => {
           const img = e.target;
           let why = "Can't draw this slide";
-          try { const res = await fetch(img.src); why = `Can't draw: ${(await res.json()).detail}`; } catch (err) { /* keep the generic text */ }
+          try { const res = await fetch(img.src); why = `Can't draw: ${await failure(res)}`; } catch (err) { /* keep the generic text */ }
           img.replaceWith(el("span", { class: "thumb-error" }, why));
         } } }),
       el("span", { class: "meta" }, el("span", {}, `${j + 1}  ${TYPES[sl.type].name} · ${sl.label}`),
@@ -241,7 +241,7 @@ function selectSlide(n) {
 async function draw(url, options) {
   const start = performance.now();
   const res = await fetch(url, options);
-  if (!res.ok) { $("#issues").textContent = (await res.json()).detail || "Couldn't draw this slide"; return; }
+  if (!res.ok) { $("#issues").textContent = await failure(res); return; }
   const img = $("#preview");
   if (img.src.startsWith("blob:")) URL.revokeObjectURL(img.src);
   img.src = URL.createObjectURL(await res.blob());
@@ -875,7 +875,7 @@ async function manageTeams(after) {
     const form = new FormData();
     form.append("file", file); form.append("name", name); form.append("trim", $("#team-trim").checked ? "true" : "false");
     const res = await fetch("/api/teams", { method: "POST", body: form });
-    if (!res.ok) { $("#team-status").textContent = (await res.json()).detail; return; }
+    if (!res.ok) { $("#team-status").textContent = await failure(res); return; }
     $("#team-name").value = ""; $("#team-file").value = ""; $("#team-file-name").textContent = "No logo chosen";
     $("#team-status").textContent = `Added ${name}.`;
     render();
@@ -1066,8 +1066,8 @@ async function uploadOnce() {
   form.append("file", file);
   flash("Adding picture…");
   const res = await fetch("/api/pictures", { method: "POST", body: form });
+  if (!res.ok) { flash(`Picture not added: ${await failure(res)}`); return null; }
   const data = await res.json();
-  if (!res.ok) { flash(`Picture not added: ${data.detail}`); return null; }
   flash(`Picture added (${Math.round(data.bytes / 1024)} KB working copy)`);
   return data.file;
 }
@@ -1116,8 +1116,8 @@ function managePictures({ choose = false } = {}) {
     form.append("file", file); form.append("name", name); form.append("trim", $("#picture-trim").checked ? "true" : "false");
     status.textContent = "Adding…";
     const res = await fetch("/api/library/pictures", { method: "POST", body: form });
+    if (!res.ok) { status.textContent = await failure(res); return; }
     const data = await res.json();
-    if (!res.ok) { status.textContent = data.detail; return; }
     $("#picture-name").value = ""; $("#picture-file").value = ""; $("#picture-trim").checked = false;
     if (choose) { done(await usePicture(data.id)); return; }
     status.textContent = `Added ${name}.`;

@@ -1,15 +1,16 @@
 """The events home, Settings, Teams and Pictures: creating, opening, importing and deleting events."""
 
+import shutil
 import tempfile
 import zipfile
 from pathlib import Path
 
-import yaml
 from fastapi import Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response
+from starlette.background import BackgroundTask
 
 from loopgen import load_event
-from loopgen.event import DEFAULT_THEME, Event, EventError, Loop, _slide
+from loopgen.event import DEFAULT_THEME, Event, EventError, Loop, _slide, read_event_file
 from loopgen.loops import render_slide
 from loopgen.slides import MissingAsset, Renderer
 from loopgen.uploads import UploadError, prepare_upload
@@ -244,7 +245,7 @@ def register(app, ctx):
         """The event's first slide, for its row on the home screen."""
         try:
             path = library_call(lib.event_file, slug)
-            own = (yaml.safe_load(path.read_text(encoding="utf-8")) or {}).get("templates")
+            own = read_event_file(path).get("templates")
             event = load_event(path, folder_override or (None if own else lib.settings().get("templates")))
             first = event.loops[0].slides[0]
             img = render_slide(event, event.loops[0], 0, 3.0 if first.type == "crawl" else None)
@@ -277,5 +278,11 @@ def register(app, ctx):
     @app.get("/api/events/{slug}/package")
     def download_package(slug: str):
         tmp = Path(tempfile.mkdtemp())
-        dest = library_call(lib.export_package, slug, tmp / slug)
-        return FileResponse(dest, filename=dest.name, media_type="application/zip")
+        try:
+            dest = library_call(lib.export_package, slug, tmp / slug)
+        except Exception:
+            shutil.rmtree(tmp, ignore_errors=True)
+            raise
+        # the zip is only on its way to the browser: its folder goes once it's sent
+        cleanup = BackgroundTask(shutil.rmtree, tmp, ignore_errors=True)
+        return FileResponse(dest, filename=dest.name, media_type="application/zip", background=cleanup)

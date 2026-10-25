@@ -1,11 +1,16 @@
 """The Loop Builder folder: starters, duplicates, settings and .loopevent packages."""
 
 import zipfile
+from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
 
 from app.library import STARTERS, Library, LibraryError
+from app.server import create_app
 from loopgen import load_event, render_slide, run_checks
+from loopgen.__main__ import main as cli
+from loopgen.event import EventError
 
 
 @pytest.fixture(name="lib")
@@ -155,3 +160,70 @@ def test_importing_a_renamed_events_package_tells_the_copy_apart(lib, tmp_path):
     package = lib.export_package(slug, tmp_path / "Round 4 renamed")
     names = [load_event(lib.event_file(lib.import_package(package))).name for _ in range(2)]
     assert names == ["Round 4 renamed (2)", "Round 4 renamed (3)"]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "- just\n- a list\n",
+        "event: Bad\nloops: [1, 2]\n",
+        "event: Bad\nloops: [\n",
+        "event: Bad\nloops:\n  - name: a\n    slides: 3\n",
+    ],
+)
+def test_a_malformed_event_file_is_left_out_and_explained(lib, text):
+    """A hand-edited or half-synced file used to take the whole events home down (500) with it."""
+    lib.create("Good", "blank")
+    (lib.events_dir / "Bad").mkdir()
+    (lib.events_dir / "Bad" / "event.yaml").write_text(text, encoding="utf-8")
+    assert [e["name"] for e in lib.events()] == ["Good"]
+    api = TestClient(create_app(library=lib), base_url="http://127.0.0.1")  # the app answers only its own host
+    assert api.get("/api/home").status_code == 200
+    res = api.post("/api/events/Bad/open")
+    assert res.status_code == 422 and "Bad" in res.json()["detail"]  # an EventError naming the file, not a 500
+
+
+def test_a_slide_whose_settings_are_a_list_says_so(tmp_path):
+    path = tmp_path / "bad.yaml"
+    path.write_text("event: x\nloops:\n  - name: a\n    slides:\n      - card: [1, 2]\n", encoding="utf-8")
+    with pytest.raises(EventError, match="loop 1 \\(a\\), slide 1: a card's settings"):
+        load_event(path)
+
+
+def test_the_command_line_reports_a_malformed_file_without_a_traceback(tmp_path, monkeypatch, capsys):
+    path = tmp_path / "bad.yaml"
+    path.write_text("event: x\nloops: [\n", encoding="utf-8")
+    monkeypatch.setattr("sys.argv", ["loopgen", str(path), "--check"])
+    assert cli() == 1
+    err = capsys.readouterr().err
+    assert err.startswith("error: ") and "(line 3)" in err and "Traceback" not in err
+
+
+@pytest.mark.parametrize("text", ["- just\n- a list\n", "event: Bad\nloops: [1]\n"])
+def test_a_malformed_package_or_event_is_refused_not_half_made(lib, tmp_path, text):
+    package = tmp_path / "bad.loopevent"
+    with zipfile.ZipFile(package, "w") as z:
+        z.writestr("event.yaml", text)
+    with pytest.raises(LibraryError, match="isn.t a Loop Builder event"):
+        lib.import_package(package)
+    assert not list(lib.events_dir.iterdir())  # nothing unpacked
+    (lib.events_dir / "Bad").mkdir()
+    (lib.events_dir / "Bad" / "event.yaml").write_text(text, encoding="utf-8")
+    with pytest.raises(LibraryError):
+        lib.duplicate("Bad", "Copy")
+    assert [p.name for p in lib.events_dir.iterdir()] == ["Bad"]  # no half-made copy
+
+
+def test_template_panels_need_a_panel_each(tmp_path):
+    path = tmp_path / "panels.yaml"
+    path.write_text("event: x\ntemplate_panels: {Welcome.tpl: 1}\nloops: []\n", encoding="utf-8")
+    with pytest.raises(EventError, match="template_panels: Welcome.tpl needs a 'panel'"):
+        load_event(path)
+
+
+def test_the_command_line_refuses_slide_zero(monkeypatch, capsys):
+    event = Path(__file__).resolve().parent.parent / "examples" / "dual-meet" / "event.yaml"
+    monkeypatch.setattr("sys.argv", ["loopgen", str(event), "--slide-png", "Raffle", "0", "out.png"])
+    with pytest.raises(SystemExit):
+        cli()
+    assert "whole number from 1" in capsys.readouterr().err

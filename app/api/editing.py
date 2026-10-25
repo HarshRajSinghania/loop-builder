@@ -46,66 +46,69 @@ def register(app, ctx):
 
     @app.get("/api/event")
     def event():
-        loops = []
-        for i, loop in enumerate(s.event.loops):
-            try:
-                length = loop_length(s.renderer, loop, build_clips(s.renderer, loop)) / s.event.fps
-            except (MissingAsset, ValueError, KeyError):
-                length = None
-            raw = s.data["loops"][i]["slides"]
-            loops.append(
-                {
-                    "name": loop.name,
-                    "hold": loop.hold,
-                    "fade": loop.fade,
-                    "repeat": loop.repeat,
-                    "length": length,
-                    "slides": [
-                        {
-                            "type": sl.type,
-                            "label": slide_label(sl),
-                            "hold": sl.hold,
-                            "timed": sl.timed,
-                            "id": sl.id,
-                            "raw": raw[j],
-                        }
-                        for j, sl in enumerate(loop.slides)
-                    ],
-                }
-            )
-        uses = {}
-        for lp in s.data["loops"]:
-            for raw in lp.get("slides") or []:
-                props = next(iter(raw.values())) or {}
-                key = props.get("ref") or props.get("id")
-                if key:
-                    uses[key] = uses.get(key, 0) + 1
-        for lp in loops:
-            for sl in lp["slides"]:
-                props = next(iter(sl["raw"].values())) or {}
-                key = props.get("ref") or props.get("id")
-                sl["linked"] = uses.get(key, 0) if key and uses.get(key, 0) > 1 else 0
-        team_look = matches_team_look(s.data, s.path.parent)
-        return {
-            "theme": s.data.get("theme") or {},
-            "team_look": team_look,
-            # offer the team theme unless the event has it, or kept its own while the team theme was as it is now
-            "offer_team_theme": not team_look and s.data.get("own_theme") != look_key(s.data),
-            "panels": s.event.panels,
-            "templates_folder": str(s.event.templates),
-            "templates_found": s.event.templates.is_dir(),
-            "templates_set": s.folder_source != "settings" or bool(s.default()),  # else none chosen yet
-            "templates_source": s.folder_source,
-            "can_undo": bool(s.undo_stack),
-            "can_redo": bool(s.redo_stack),
-            "slug": s.path.parent.name,
-            "name": s.event.name,
-            "visitor": s.data.get("visitor"),
-            "date": s.event.date,
-            "width": s.event.width,
-            "height": s.event.height,
-            "loops": loops,
-        }
+        # The lengths render with the session's renderer, as previews do, so they take the same lock: a preview
+        # drawn meanwhile (the editor asks for both after an autosave) would otherwise share its warnings and caches.
+        with s.lock:
+            loops = []
+            for i, loop in enumerate(s.event.loops):
+                try:
+                    length = loop_length(s.renderer, loop, build_clips(s.renderer, loop)) / s.event.fps
+                except (MissingAsset, ValueError, KeyError):
+                    length = None
+                raw = s.data["loops"][i]["slides"]
+                loops.append(
+                    {
+                        "name": loop.name,
+                        "hold": loop.hold,
+                        "fade": loop.fade,
+                        "repeat": loop.repeat,
+                        "length": length,
+                        "slides": [
+                            {
+                                "type": sl.type,
+                                "label": slide_label(sl),
+                                "hold": sl.hold,
+                                "timed": sl.timed,
+                                "id": sl.id,
+                                "raw": raw[j],
+                            }
+                            for j, sl in enumerate(loop.slides)
+                        ],
+                    }
+                )
+            uses = {}
+            for lp in s.data["loops"]:
+                for raw in lp.get("slides") or []:
+                    props = next(iter(raw.values())) or {}
+                    key = props.get("ref") or props.get("id")
+                    if key:
+                        uses[key] = uses.get(key, 0) + 1
+            for lp in loops:
+                for sl in lp["slides"]:
+                    props = next(iter(sl["raw"].values())) or {}
+                    key = props.get("ref") or props.get("id")
+                    sl["linked"] = uses.get(key, 0) if key and uses.get(key, 0) > 1 else 0
+            team_look = matches_team_look(s.data, s.path.parent)
+            return {
+                "theme": s.data.get("theme") or {},
+                "team_look": team_look,
+                # offer the team theme unless the event has it, or kept its own while the team theme was as it is now
+                "offer_team_theme": not team_look and s.data.get("own_theme") != look_key(s.data),
+                "panels": s.event.panels,
+                "templates_folder": str(s.event.templates),
+                "templates_found": s.event.templates.is_dir(),
+                "templates_set": s.folder_source != "settings" or bool(s.default()),  # else none chosen yet
+                "templates_source": s.folder_source,
+                "can_undo": bool(s.undo_stack),
+                "can_redo": bool(s.redo_stack),
+                "slug": s.path.parent.name,
+                "name": s.event.name,
+                "visitor": s.data.get("visitor"),
+                "date": s.event.date,
+                "width": s.event.width,
+                "height": s.event.height,
+                "loops": loops,
+            }
 
     @app.get("/api/slide.png")
     def slide_png(loop: int, n: int, at: float | None = None, scale: int = 1):

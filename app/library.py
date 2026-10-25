@@ -19,7 +19,7 @@ from pathlib import Path
 import yaml
 from PIL import Image
 
-from loopgen.event import DEFAULT_THEME
+from loopgen.event import DEFAULT_THEME, EventError, parse_event, read_event_file
 from loopgen.uploads import prepare_logo, prepare_picture
 
 LOOK_COLOURS = ("primary", "accent", "text", "muted", "background")  # the colours a look sets
@@ -374,8 +374,8 @@ class Library:  # pylint: disable=too-many-public-methods  # the one way in to t
     def set_visitor(self, slug, team_id):
         """Make a team the visiting team of an event that isn't open (see apply_visitor); returns cards changed."""
         path = self.event_file(slug)
+        data = self._read(path)
         visitor = self.use_team(team_id, path.parent)
-        data = yaml.safe_load(path.read_text(encoding="utf-8"))
         changed = apply_visitor(data, visitor)
         path.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding="utf-8")
         return changed
@@ -392,8 +392,8 @@ class Library:  # pylint: disable=too-many-public-methods  # the one way in to t
         found = []
         for path in self.events_dir.glob("*/event.yaml"):
             try:
-                data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-            except yaml.YAMLError:
+                data = read_event_file(path)
+            except EventError:  # a hand-edited or half-synced file: left out, so the other events still show
                 continue
             found.append(
                 {
@@ -480,13 +480,21 @@ class Library:  # pylint: disable=too-many-public-methods  # the one way in to t
 
     def duplicate(self, slug, name, when=None):
         source = self.event_file(slug).parent
+        data = self._read(source / "event.yaml")  # before copying, so a bad file leaves no half-made copy
         folder = self._free_folder(name)
         shutil.copytree(source, folder)
         path = folder / "event.yaml"
-        data = yaml.safe_load(path.read_text(encoding="utf-8"))
         data["event"], data["date"] = name, str(when or date.today())
         path.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding="utf-8")
         return folder.name
+
+    @staticmethod
+    def _read(path):
+        """An event file's data, or LibraryError (a 422 in the app) if it isn't readable as an event."""
+        try:
+            return read_event_file(path)
+        except EventError as exc:
+            raise LibraryError(str(exc)) from exc
 
     def delete(self, slug):
         """Remove an event's folder: its file, its pictures and its kept versions."""
@@ -516,7 +524,10 @@ class Library:  # pylint: disable=too-many-public-methods  # the one way in to t
             for n in names:
                 if n.startswith("/") or ".." in Path(n).parts or ":" in n:
                     raise LibraryError(f"unsafe path in package: {n}")
-            data = yaml.safe_load(z.read("event.yaml")) or {}
+            try:
+                data = parse_event(z.read("event.yaml").decode("utf-8", "replace"), "its event.yaml")
+            except EventError as exc:  # checked before anything is unpacked, so a bad file imports nothing
+                raise LibraryError(f"this isn't a Loop Builder event: {exc}") from exc
             name = str(data.get("event") or Path(package).stem)
             new, folder = self._free_name(name)
             z.extractall(folder)
