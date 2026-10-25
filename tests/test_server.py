@@ -459,3 +459,27 @@ def test_a_template_folder_written_with_a_tilde_is_found_everywhere(client, tmp_
     assert home["settings"]["templates"] == str(tmp_path / "Boards")
     assert home["templates_found"] and home["template_count"] == 1
     assert api.get("/api/event").json()["templates_found"]
+
+
+def test_only_the_apps_own_pages_can_use_it(client):
+    """A website the user visits can't drive the app: not by DNS rebinding (its own name aimed at 127.0.0.1) and not
+    by posting a form at it. Requests from no page at all (scripts, these tests) still work."""
+    api, _ = client
+    assert api.get("/api/home", headers={"host": "evil.example.com"}).status_code == 403
+    assert api.get("/api/home", headers={"host": "localhost:8123"}).status_code == 200
+    same = {"host": "LOCALHOST:8765", "origin": "http://localhost:8765"}  # names are case-blind
+    assert api.put("/api/settings", json={"team": "Riverside"}, headers=same).status_code == 200
+    logo = {"file": ("logo.png", b"not even a picture")}
+    for headers in (
+        {"origin": "https://evil.example.com"},
+        {"origin": "null"},
+        {"referer": "https://evil.example.com/x"},
+    ):
+        assert api.post("/api/settings/logo", files=logo, headers=headers).status_code == 403
+    assert (
+        api.put("/api/settings", json={"team": "Riverside"}, headers={"origin": "http://127.0.0.1"}).status_code == 200
+    )
+    assert (
+        api.put("/api/settings", json={"team": "Riverside"}, headers={"referer": "http://127.0.0.1/edit"}).status_code
+        == 200
+    )
