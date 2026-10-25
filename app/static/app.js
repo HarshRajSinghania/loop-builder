@@ -21,7 +21,7 @@ const icon = (type) => {
   return svg;
 };
 
-const state = { event: null, loop: 0, n: 0, draft: null, templates: [], templateDetails: [], teams: [], settings: {}, stamp: Date.now() };
+const state = { event: null, loop: 0, n: 0, draft: null, templates: [], templateDetails: [], teams: [], settings: {}, issues: [], stamp: Date.now() };
 const kindOf = (raw) => Object.keys(raw)[0];
 const propsOf = (raw) => raw[kindOf(raw)];
 const currentLoop = () => state.event.loops[state.loop];
@@ -67,6 +67,7 @@ function renderTabs() {
   $("#tabs").replaceChildren(...state.event.loops.map((lp, i) =>
     el("button", { class: "tab", role: "tab", type: "button", "aria-selected": String(i === state.loop),
       on: { click: () => { state.loop = i; state.n = 0; loadEvent(); } } }, lp.name, el("span", { class: "mono" }, clock(lp.length)))));
+  markIssues();
 }
 
 const slideUrl = (loop, n, scale) => `/api/slide.png?loop=${loop}&n=${n}&scale=${scale}&t=${state.stamp}`;
@@ -92,10 +93,29 @@ function renderLoop() {
         sl.linked ? el("span", { class: "badge", title: "Shown in more than one place; an edit changes all of them" }, `Linked · ${sl.linked}`)
           : el("span", { class: "mono" }, sl.timed ? "timed" : `${sl.hold ?? lp.hold} s${pagesLabel(sl)}`))))),
     el("li", { class: "drop-zone", "data-n": lp.slides.length }, "Drop a slide here"));
+  markIssues();
 }
 
 function markCurrent() {
   document.querySelectorAll("#slides .thumb").forEach((b, j) => b.setAttribute("aria-current", String(j === state.n)));
+  markIssues();
+}
+
+// A slide a check stops from exporting is marked in the strip, and its reason shows under its preview, so a
+// problem is seen where it is, not only in the list at the bottom.
+function markIssues() {
+  const name = currentLoop().name;
+  const errors = (j) => state.issues.filter((i) => i.level === "error" && i.loop === name && i.slide === j + 1);
+  document.querySelectorAll("#slides .thumb").forEach((b, j) => {
+    const found = errors(j);
+    b.classList.toggle("has-error", found.length > 0);
+    b.title = found.map((i) => i.message).join("\n");
+  });
+  document.querySelectorAll("#tabs .tab").forEach((tab, i) => { // a loop with a slide to fix, on another tab too
+    const loop = state.event.loops[i];
+    tab.classList.toggle("has-error", !!loop && state.issues.some((x) => x.level === "error" && x.loop === loop.name));
+  });
+  $("#slide-errors").textContent = errors(state.n).map((i) => `✗ ${i.message[0].toUpperCase()}${i.message.slice(1)}`).join("  ");
 }
 
 // ---------- strip editing: add, move, duplicate, delete ----------
@@ -805,6 +825,39 @@ async function manageTeams() {
   };
 }
 
+// A logo-center card's picture: the theme logo, a team's logo from Teams (a visitor's welcome card shows theirs,
+// not ours), an uploaded picture, or none. A team's logo is copied into the event, as a lane's is.
+function cardPicture(p) {
+  const pic = p.picture || "";
+  const team = pic.startsWith("assets/teams/") ? state.teams.find((t) => pic.endsWith(`/${t.logo}`)) : null;
+  const choosing = state.teamPickFor === `${state.loop}:${state.n}`; // "A team's logo" pressed, no team picked yet
+  const kind = pic.startsWith("assets/teams/") || choosing ? "team" : !pic || pic === "logo" ? "logo" : pic === "none" ? "none" : "upload";
+  const useTeam = async (id) => {
+    try { set("picture", (await api(`/api/teams/${encodeURIComponent(id)}/use`, "POST")).logo); }
+    catch (err) { flash(err.message); return; }
+    state.teamPickFor = null;
+    renderEditor();
+  };
+  const teamPick = kind === "team" && el("select", { class: "field", "aria-label": "Team whose logo the card shows", on: { change: (e) => {
+    if (e.target.value === "__manage") { e.target.value = team ? team.id : ""; manageTeams(); return; }
+    if (e.target.value) useTeam(e.target.value);
+  } } },
+    !team && el("option", { value: "" }, "Pick a team…"),
+    state.teams.map((t) => el("option", { value: t.id, selected: team && team.id === t.id }, t.name)),
+    el("option", { value: "__manage" }, "Add or manage teams…"));
+  const box = group("Picture", seg("Picture", [["logo", "Theme logo"], ["team", "A team’s logo"], ["upload", "Upload…"], ["none", "None"]], kind,
+    async (v) => {
+      state.teamPickFor = null;
+      if (v === "upload") await pickPicture((file) => set("picture", file));
+      else if (v === "team") { // straight to the only other team; else choose from the list that appears
+        const others = state.teams.filter((t) => !t.home);
+        if (others.length === 1) await useTeam(others[0].id); else { state.teamPickFor = `${state.loop}:${state.n}`; renderEditor(); }
+      } else set("picture", v === "logo" ? "" : v);
+    }), teamPick);
+  box.classList.add("wide"); // four choices: a full row, so their names don't wrap
+  return box;
+}
+
 const EDITORS = {
   board: (p) => [templateSelect("Template", p.template, (v) => { set("template", v); renderEditor(); }),
     holdField()],
@@ -823,9 +876,7 @@ const EDITORS = {
         note && el("p", { class: noteKind, role: "status" }, note)),
       group(`Lines · ${Math.min(p.lines.length, info.max)} of ${info.max} shown`, lineRows(p.lines, 4, true, info.max, layoutName)),
       el("div", { class: "grid" },
-        layout === "logo-center" && group("Picture", seg("Picture", [["logo", "Theme logo"], ["upload", "Upload…"], ["none", "None"]],
-          p.picture && p.picture !== "logo" ? (p.picture === "none" ? "none" : "upload") : "logo",
-          async (v) => { if (v === "upload") await pickPicture((file) => set("picture", file)); else set("picture", v === "logo" ? "" : v); })),
+        layout === "logo-center" && cardPicture(p),
         layout === "text-qr" && linkField("QR link", p.qr, "qr", { id: "qr-link" }),
         layout === "text-qr" && el("label", { class: "check-row" }, el("input", { type: "checkbox", checked: !!p.show_url,
           on: { change: (e) => { set("show_url", e.target.checked || ""); renderEditor(); } } }), "Show the link under the QR"),
@@ -916,6 +967,8 @@ async function pickPicture(make) {
 
 async function loadChecks() {
   const issues = await api("/api/checks");
+  state.issues = issues;
+  markIssues();
   $("#checks").replaceChildren(issues.length
     ? el("ul", {}, issues.map((i) => el("li", { class: i.level }, `${i.level}: ${i.loop}${i.slide ? ", slide " + i.slide : ""}: ${i.message}`)))
     : el("p", {}, "Checks: no problems in any loop."));
@@ -925,6 +978,8 @@ async function loadChecks() {
 
 $("#open-export").addEventListener("click", () => {
   if ($("#run-export").disabled) { $("#export").showModal(); return; } // still exporting: show it as it was
+  replaceAgreed = null;
+  exportButton("Export selected");
   $("#export-loops").replaceChildren(...state.event.loops.map((lp, i) => el("label", { class: "job" },
     el("input", { type: "checkbox", checked: true, value: i, "aria-label": `Export ${lp.name}` }),
     el("span", {}, lp.name, " ", el("span", { class: "mono" }, `· ${clock(lp.length)}`)),
@@ -935,6 +990,10 @@ $("#open-export").addEventListener("click", () => {
 });
 
 $("#pick-out").addEventListener("click", () => pickFolder($("#out-dir")));
+// Files are named by loop, so exporting another meet into the same folder replaces the last one's. Say so first:
+// the first click lists what would be replaced, a second click on "Replace and export" goes ahead.
+let replaceAgreed = null; // the choices the person agreed to replace files for
+const exportButton = (text) => { $("#run-export").textContent = text; };
 $("#run-export").addEventListener("click", async () => {
   const outDir = $("#out-dir").value.trim();
   if (!outDir) { $("#export-status").textContent = "Pick an export folder first."; return; }
@@ -942,11 +1001,29 @@ $("#run-export").addEventListener("click", async () => {
   const loops = [...document.querySelectorAll("#export-loops input:checked")].map((c) => Number(c.value));
   const formats = [$("#fmt-wmv").checked && "wmv", $("#fmt-png").checked && "png"].filter(Boolean);
   if (!formats.length && !$("#mp4").checked) { $("#export-status").textContent = "Pick at least one thing to make."; return; }
+  const choice = JSON.stringify([outDir, loops, formats, $("#mp4").checked]);
+  if (replaceAgreed !== choice) {
+    let existing = [];
+    try { existing = (await api("/api/export/existing", "POST", { loops, out_dir: outDir, formats, preview_mp4: $("#mp4").checked })).files; }
+    catch (err) { /* the export itself says what's wrong */ }
+    if (existing.length) {
+      replaceAgreed = choice;
+      const when = new Date(Math.max(...existing.map((f) => f.modified)) * 1000).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+      const names = existing.slice(0, 3).map((f) => f.name).join(", ") + (existing.length > 3 ? ` and ${existing.length - 3} more` : "");
+      $("#export-status").textContent = `This folder already has ${existing.length === 1 ? "a file" : `${existing.length} files`} from an earlier export (last made ${when}): ${names}. `
+        + "Replace and export writes over them (and clears this loop’s older stills), or choose another folder to keep them.";
+      exportButton("Replace and export");
+      return;
+    }
+  }
+  const replace = replaceAgreed === choice;
+  replaceAgreed = null;
+  exportButton("Export selected");
   let job;
   const run = $("#run-export");
   run.disabled = true; // one export at a time: a second would write the same files
   try {
-    try { job = await api("/api/export", "POST", { loops, out_dir: outDir, formats, preview_mp4: $("#mp4").checked }); }
+    try { job = await api("/api/export", "POST", { loops, out_dir: outDir, formats, preview_mp4: $("#mp4").checked, replace }); }
     catch (err) { $("#export-status").textContent = err.message; return; }
     while (job.state === "running") {
       $("#export-status").textContent = `Rendering ${job.current || "…"} (${job.done.length} of ${job.total} done)`;

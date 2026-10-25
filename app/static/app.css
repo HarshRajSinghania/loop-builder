@@ -25,6 +25,9 @@ a{color:#7DB6FF}
 .strip ol{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
 .thumb{display:flex;flex-direction:column;gap:8px;width:100%;text-align:left;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px;color:var(--text);font:inherit;font-size:13px;cursor:pointer}
 .thumb[aria-current="true"]{border:2px solid var(--blue);padding:7px}
+.thumb.has-error{box-shadow:0 0 0 2px #FF6B6B}.thumb.has-error .meta>span:first-child::before{content:"✗ ";color:#FF9B9B} /* a check stops this slide exporting */
+.slide-errors{color:#FF9B9B}
+.tab.has-error::before{content:"✗ ";color:#FF9B9B}
 .thumb img,.stage img{display:block;width:100%;aspect-ratio:320/176;image-rendering:pixelated;border-radius:4px;background:#000}
 .thumb .meta{display:flex;justify-content:space-between;gap:6px}.thumb .meta .mono{color:var(--muted)}
 .inspector{flex:999 1 560px;min-width:0;padding:20px 28px 32px;display:flex;flex-direction:column;gap:18px}
@@ -75,6 +78,7 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
 .group{border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
 .group legend{margin-bottom:10px}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px}
+.grid>.wide{grid-column:1/-1}
 .lbl{display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--soft)}
 .tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
 .tile{display:flex;flex-direction:column;gap:8px;align-items:center;background:var(--panel);border:1px solid var(--ctl-line);border-radius:10px;padding:10px;color:var(--soft);font:inherit;font-size:13px;cursor:pointer}

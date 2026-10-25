@@ -1,5 +1,6 @@
 """Assemble a loop's slides into frames (holds, crossfades, timed slides) and encode it."""
 
+import glob
 from pathlib import Path
 
 import av
@@ -130,6 +131,22 @@ def _file_safe(text):
     """Text usable in a file name on Windows and Mac."""
     cleaned = "".join("-" if c in '\\/:*?"<>|' else c for c in text).strip(" .")
     return " ".join(cleaned.split())[:60] or "slide"
+
+
+def existing_exports(loop, out_dir, formats=("wmv",), preview_mp4=False):
+    """The files an export of `loop` into `out_dir` would replace: its WMV, its review MP4, and the PNGs an earlier
+    export left under its name. Names only, nothing is rendered, so the editor can ask before replacing them."""
+    out_dir = Path(out_dir)
+    if not out_dir.is_dir():
+        return []
+    found = []
+    if "wmv" in formats or preview_mp4:
+        found.append(out_dir / f"{loop.name}.wmv")
+    if preview_mp4:
+        found.append(out_dir / f"{loop.name} (preview).mp4")
+    if "png" in formats:
+        found += sorted(out_dir.glob(f"{glob.escape(_file_safe(loop.name))} [0-9][0-9] - *.png"))
+    return [p for p in found if p.is_file()]
 
 
 def export_pngs(event, loop, out_dir, renderer=None):

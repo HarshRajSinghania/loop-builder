@@ -286,3 +286,19 @@ def test_lanes_split_into_pages_and_loops_with_a_countdown_end_cleanly(tmp_path)
     page1, page2 = render_slide(event, welcome, 0), render_slide(event, welcome, 0, at=3)
     assert page1.tobytes() != page2.tobytes()
     assert not [i for i in run_checks(event) if "repeat" in i.message]
+
+
+def test_a_placeholder_team_name_blocks_an_export_until_it_is_typed_over(tmp_path):
+    event_file = tmp_path / "placeholder.yaml"
+    event_file.write_text(
+        "event: P\nloops:\n  - name: Welcome loop\n    slides:\n"
+        "      - card: {lines: [{text: Welcome}, {text: VISITING TEAM}]}\n"
+        "      - card: {lines: [{text: team name}]}\n"
+        "      - card: {lines: [{text: Welcome visiting teams}, {text: HASTINGS}]}\n",
+        encoding="utf-8",
+    )
+    errors = [i for i in run_checks(load_event(event_file)) if i.level == "error"]
+    assert [(e.slide, e.message) for e in errors] == [
+        (1, "still says “VISITING TEAM”: type the team’s name over it"),
+        (2, "still says “team name”: type the team’s name over it"),
+    ]

@@ -23,7 +23,7 @@ from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from loopgen import export_loop, export_pngs, load_event, run_checks, slide_label
+from loopgen import existing_exports, export_loop, export_pngs, load_event, run_checks, slide_label
 from loopgen.checks import full_url
 from loopgen import tpl
 from loopgen.draw import decode_qr
@@ -253,6 +253,7 @@ class ExportBody(BaseModel):
     out_dir: str
     formats: list[str] = ["wmv"]  # "wmv" (video) and/or "png" (one still per slide)
     preview_mp4: bool = False
+    replace: bool = False  # agreed to write over an earlier export: its stills of these loops go first
 
 
 class Open:  # pylint: disable=too-few-public-methods  # a holder for the open event
@@ -899,6 +900,15 @@ def create_app(event_path=None, templates=None, library=None):
                 {"level": i.level, "loop": i.loop, "slide": i.slide, "message": i.message} for i in run_checks(s.event)
             ]
 
+    @app.post("/api/export/existing")
+    def export_existing(body: ExportBody):
+        """Files an export with these choices would replace, newest first, so the editor can ask first."""
+        with s.lock:
+            loops = [s.loop(i) for i in body.loops]
+        found = [p for lp in loops for p in existing_exports(lp, body.out_dir, body.formats, body.preview_mp4)]
+        found.sort(key=lambda p: (p.suffix == ".png", -p.stat().st_mtime))  # the videos first: they matter most
+        return {"files": [{"name": p.name, "modified": p.stat().st_mtime} for p in found]}
+
     @app.post("/api/export")
     def export(body: ExportBody):
         if body.preview_mp4 and "wmv" not in body.formats:
@@ -935,6 +945,9 @@ def create_app(event_path=None, templates=None, library=None):
                     if "wmv" in body.formats:
                         paths += export_loop(event, loop, body.out_dir, body.preview_mp4, renderer)
                     if "png" in body.formats:
+                        if body.replace:  # an earlier, longer loop's extra stills would mix two meets in one folder
+                            for old in existing_exports(loop, body.out_dir, ("png",)):
+                                old.unlink()
                         pngs, skipped = export_pngs(event, loop, body.out_dir, renderer)
                         paths += pngs
                     job["done"].append(

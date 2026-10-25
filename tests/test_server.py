@@ -340,3 +340,25 @@ def test_import_a_package_picked_with_the_open_dialog(tmp_path):
     names = sorted(e["name"] for e in api.get("/api/home").json()["events"])
     assert copy != slug and names == ["Sections", "Sections (2)"]
     assert api.post("/api/events/import-file", json={"path": str(tmp_path / "nope.loopevent")}).status_code == 422
+
+
+def test_the_editor_can_ask_before_an_export_replaces_files(client, tmp_path):
+    api, _ = client
+    out = tmp_path / "out"
+    body = {"loops": [2], "out_dir": str(out), "formats": ["png"]}
+    assert api.post("/api/export/existing", json=body).json() == {"files": []}  # no folder yet
+    job = api.post("/api/export", json=body).json()
+    while api.get(f"/api/jobs/{job['id']}").json()["state"] == "running":
+        time.sleep(0.02)
+    pngs = [f["name"] for f in api.post("/api/export/existing", json=body).json()["files"]]
+    assert pngs and all(n.endswith(".png") for n in pngs)  # an earlier export's stills would be replaced
+    loop_name = api.get("/api/event").json()["loops"][2]["name"]
+    (out / f"{loop_name}.wmv").write_bytes(b"an earlier video")
+    found = api.post("/api/export/existing", json={**body, "formats": ["wmv"]}).json()["files"]
+    assert [f["name"] for f in found] == [f"{loop_name}.wmv"]
+    stale = out / f"{loop_name} 09 - FROM LAST WEEK.png"  # an earlier, longer loop's extra still
+    stale.write_bytes(b"old")
+    job = api.post("/api/export", json={**body, "replace": True}).json()  # agreed to replace: old stills go first
+    while api.get(f"/api/jobs/{job['id']}").json()["state"] == "running":
+        time.sleep(0.02)
+    assert not stale.exists() and sorted(p.name for p in out.glob("*.png")) == sorted(pngs)

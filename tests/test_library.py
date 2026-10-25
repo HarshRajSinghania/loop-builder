@@ -21,7 +21,8 @@ def test_every_starter_loads_and_draws(lib, starter):
         for i in range(len(loop.slides)):
             assert render_slide(event, loop, i).size == (320, 176)
     errors = [i for i in run_checks(event) if i.level == "error"]
-    assert all("QR" in e.message for e in errors)  # only the Sections heat-sheet link, left for the team to fill in
+    # only what's left for the team to fill in: the Sections heat-sheet link and the visiting team's name
+    assert all("QR" in e.message or "VISITING TEAM" in e.message for e in errors)
 
 
 def test_names_never_collide_and_duplicates_are_independent(lib):

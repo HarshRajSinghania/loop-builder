@@ -8,6 +8,9 @@ from .loops import build_clips, loop_length
 from .slides import MissingAsset, Renderer
 
 MAX_MINUTES = 30
+# Words the starters and a new card put on a card for you to replace. A whole line of one of these would go out to
+# the board as is ("Welcome VISITING TEAM"), so it blocks an export until it's typed over.
+PLACEHOLDERS = ("VISITING TEAM", "TEAM NAME")
 
 
 @dataclass(frozen=True)
@@ -30,6 +33,13 @@ def _urls(slide):
     return []
 
 
+def _placeholders(slide):
+    if slide.type != "card":
+        return []
+    lines = [str((line or {}).get("text", "")).strip() for line in slide.props.get("lines") or []]
+    return [text for text in lines if text.upper() in PLACEHOLDERS]
+
+
 def check_loop(event, loop, renderer=None):
     renderer = renderer or Renderer(event)
     issues = []
@@ -43,6 +53,8 @@ def check_loop(event, loop, renderer=None):
             continue
         for msg in dict.fromkeys(renderer.issues):
             issues.append(Issue("warning", loop.name, i, msg))
+        for text in _placeholders(slide):
+            issues.append(Issue("error", loop.name, i, f"still says “{text}”: type the team’s name over it"))
         for url in _urls(slide):
             if not url:
                 issues.append(Issue("error", loop.name, i, "QR has no URL"))

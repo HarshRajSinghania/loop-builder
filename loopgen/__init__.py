@@ -5,12 +5,13 @@ An event file holds a theme and loops; each loop is an ordered list of slides
 
 from .event import Event, load_event
 from .checks import Issue, run_checks
-from .loops import build_clips, export_loop, export_pngs, loop_frames, render_slide, slide_label
+from .loops import build_clips, existing_exports, export_loop, export_pngs, loop_frames, render_slide, slide_label
 
 __all__ = [
     "Event",
     "Issue",
     "build_clips",
+    "existing_exports",
     "export_loop",
     "export_pngs",
     "load_event",
