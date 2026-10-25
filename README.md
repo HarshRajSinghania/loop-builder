@@ -56,7 +56,10 @@ For working on the editor itself, `--browser` opens it in a browser tab instead,
 
 - Build the app: `.venv/bin/pyinstaller packaging/loopbuilder.spec --noconfirm`; installers, signing and CI are
   in [packaging/README.md](packaging/README.md). The version is set in `app/version.py`.
-- Events live in Documents › Loop Builder (set `LOOPBUILDER_HOME` to use another folder, as the tests do).
+- Events live in the Loop Builder folder: Documents › Loop Builder on Windows, Library › Application Support ›
+  Loop Builder on a Mac (so macOS doesn't ask to open Documents; 0.1.6 and earlier used Documents there too, and the
+  events page offers to bring those over). Exports default to Movies › Loop Builder on a Mac. Set `LOOPBUILDER_HOME`
+  to use another folder, as the tests do.
 - Tests: `.venv/bin/python -m pytest`. Lint: `.venv/bin/pylint loopgen app tests packaging/*.py`. Format: `.venv/bin/black loopgen app tests packaging` (120 columns, set in `pyproject.toml`). CI checks both, so keep them clean.
 - Pictures added to an event are kept as working copies at most 2048 px on the long side, so previews stay fast.
 
@@ -64,7 +67,8 @@ For working on the editor itself, `--browser` opens it in a browser tab instead,
 
 Report a problem or ask for a feature in [Issues](https://github.com/mhuot/loop-builder/issues). In the app,
 Settings › About Loop Builder… has the version and these links. If something goes wrong in the packaged app,
-`Documents/Loop Builder/loop-builder.log` has the details.
+`loop-builder.log` in the Loop Builder folder has the details (Documents › Loop Builder on Windows,
+`~/Library/Application Support/Loop Builder` on a Mac; the events page's Show in Finder button opens it).
 
 ## Privacy
 

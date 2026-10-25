@@ -18,6 +18,12 @@
 
 <main class="home">
   <p id="update" class="setup" hidden></p>
+  <section id="documents-offer" class="setup" aria-labelledby="documents-h" hidden>
+    <h2 id="documents-h">Used Loop Builder 0.1.6 or earlier on this Mac?</h2>
+    <p>Its events are in Documents › Loop Builder. Bring them over to see them here. macOS asks once whether Loop Builder may open your Documents folder.</p>
+    <div class="row"><button class="btn btn-primary" type="button" id="documents-move">Bring them over</button><button class="btn" type="button" id="documents-skip">No, start fresh</button></div>
+    <p id="documents-status" class="warn" aria-live="polite"></p>
+  </section>
   <section id="team-setup" class="setup" hidden aria-labelledby="team-setup-h">
     <h2 id="team-setup-h">Set up your team</h2>
     <p class="muted">Every new event starts with your team’s name, logo and colours. Set them once in Settings; each event can still change its own.</p>
@@ -39,7 +45,7 @@
   <section aria-labelledby="ev-h" class="block">
     <div class="row between"><h2 id="ev-h">Events</h2><input id="search" class="field" placeholder="Search events" aria-label="Search events"></div>
     <ol id="events" class="events"></ol>
-    <p id="folder" class="muted"></p>
+    <p class="row"><span id="folder" class="muted"></span><button class="btn" type="button" id="show-folder" hidden></button></p>
   </section>
 </main>
 

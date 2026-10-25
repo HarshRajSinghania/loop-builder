@@ -26,6 +26,9 @@ async function load() {
       el("a", { href: home.update.url, target: "_blank", rel: "noopener" }, "Download it"));
   }
   $("#folder").textContent = `Events are saved on this computer in ${home.folder}.`;
+  $("#show-folder").hidden = !(native() && native().show_folder); // the app window can open it
+  $("#show-folder").textContent = /Mac/.test(navigator.platform) ? "Show in Finder" : "Show in Explorer";
+  $("#documents-offer").hidden = !home.offer_documents;
   // A dual meet's visitor, from the teams saved in Teams: their name and logo go on the starter's cards.
   const visitors = (await api("/api/teams").catch(() => [])).filter((t) => !t.home);
   const keep = $("#new-visitor").value;
@@ -98,7 +101,7 @@ $("#delete-go").addEventListener("click", async () => {
 async function savePackage(e) {
   const fileName = `${e.name}.loopevent`;
   if (native()) {
-    const path = await native().save_file(fileName, home.settings.export_dir || home.folder || "");
+    const path = await native().save_file(fileName, home.settings.export_dir || home.exports || "");
     if (!path) return;
     try { const { file } = await api(`/api/events/${encodeURIComponent(e.slug)}/package`, "POST", { path }); status(`Saved ${file.split(/[\\/]/).pop()}`, file); }
     catch (err) { status(`Not saved: ${err.message}`); }
@@ -113,7 +116,7 @@ async function imported(request) {
 }
 $("#import-pick").addEventListener("click", async () => { // a button, so Tab reaches it
   if (!native()) { $("#import-file").click(); return; } // browser tab: its own file picker
-  const path = await native().open_package(home.settings.export_dir || home.folder || ""); // the app: the system's, which can offer .loopevent files; it starts where Save does
+  const path = await native().open_package(home.settings.export_dir || home.exports || ""); // the app: the system's, which can offer .loopevent files; it starts where Save does
   if (path) await imported(() => api("/api/events/import-file", "POST", { path }));
 });
 $("#import-file").addEventListener("change", async (ev) => {
@@ -121,6 +124,20 @@ $("#import-file").addEventListener("change", async (ev) => {
   ev.target.value = "";
   if (file) await imported(() => upload("/api/events/import", file));
 });
+// The Loop Builder folder, which on a Mac is tucked away in Library › Application Support.
+$("#show-folder").addEventListener("click", () => native().show_folder(home.folder));
+// A Mac that ran 0.1.6 or earlier: its events are in Documents › Loop Builder until brought over.
+$("#documents-move").addEventListener("click", async () => {
+  $("#documents-status").textContent = "Moving…";
+  try {
+    const { moved } = await api("/api/library/move-documents", "POST");
+    status(`Brought over ${moved} event${moved === 1 ? "" : "s"} from Documents.`);
+    await load();
+  } catch (err) { // nothing there (the offer goes away), or the move failed (it stays, to try again)
+    $("#documents-status").textContent = err.message; status(err.message); await load();
+  }
+});
+$("#documents-skip").addEventListener("click", async () => { await api("/api/library/documents-checked", "POST"); await load(); });
 $("#search").addEventListener("input", renderEvents);
 $("#new-name").addEventListener("input", (e) => e.target.setCustomValidity(""));
 $("#new-date").value = today();

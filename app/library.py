@@ -1,10 +1,12 @@
 """The Loop Builder folder on this computer: settings, the team's logo and one folder per event.
 
-    Documents/Loop Builder/settings.json
-    Documents/Loop Builder/Team/logo.png
-    Documents/Loop Builder/Events/<event>/event.yaml (+ assets/)
+    <Loop Builder folder>/settings.json
+    <Loop Builder folder>/Team/logo.png
+    <Loop Builder folder>/Events/<event>/event.yaml (+ assets/)
 
-Set LOOPBUILDER_HOME to use another folder (tests do)."""
+The folder is Documents › Loop Builder on Windows, and Library › Application Support › Loop Builder on a Mac,
+where macOS asks before an app may use Documents (0.1.6 and earlier kept it in Documents there too; see
+move_from). Set LOOPBUILDER_HOME to use another folder (tests do)."""
 
 import copy
 import hashlib
@@ -12,6 +14,7 @@ import json
 import os
 import re
 import shutil
+import sys
 import zipfile
 from datetime import date
 from pathlib import Path
@@ -33,6 +36,7 @@ DEFAULT_SETTINGS = {
     "theme": {},
     "pool_lanes": 8,  # lanes in the team's pool: new lane slides start with this many
     "first_lane": 1,  # 1, or 0 for pools numbered from lane 0
+    "documents_checked": False,  # Mac: offered (or done) bringing events over from Documents › Loop Builder
 }
 
 _WELCOME = {
@@ -150,10 +154,36 @@ class LibraryError(ValueError):
     """Something about the Loop Builder folder or an event package isn't right."""
 
 
+def documents_root():
+    """Documents › Loop Builder: the Loop Builder folder on Windows, and on a Mac up to 0.1.6."""
+    return Path.home() / "Documents" / "Loop Builder"
+
+
 def default_root():
+    """The Loop Builder folder. On a Mac it's in Application Support, which needs no permission: an app that
+    reaches into Documents, Desktop or Downloads by itself makes macOS ask the person first."""
     if os.environ.get("LOOPBUILDER_HOME"):
         return Path(os.environ["LOOPBUILDER_HOME"]).expanduser()
-    return Path.home() / "Documents" / "Loop Builder"
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "Loop Builder"
+    return documents_root()
+
+
+def old_mac_folder(root):
+    """Documents › Loop Builder, where 0.1.6 and earlier kept a Mac's events, when `root` is the Mac's own Loop
+    Builder folder and so may have them to bring over; else None. Never with LOOPBUILDER_HOME: a test or second
+    folder must not pull someone's real events out of Documents."""
+    if sys.platform == "darwin" and not os.environ.get("LOOPBUILDER_HOME") and Path(root) == default_root():
+        return documents_root()
+    return None
+
+
+def default_exports(root):
+    """Where exports go until a folder is picked: somewhere easy to find in Finder or Explorer. On a Mac that's
+    Movies › Loop Builder (macOS doesn't ask about Movies), elsewhere an Exports folder in the Loop Builder folder."""
+    if sys.platform == "darwin" and not os.environ.get("LOOPBUILDER_HOME"):
+        return Path.home() / "Movies" / "Loop Builder"
+    return Path(root) / "Exports"
 
 
 VISITOR_PLACEHOLDER = "VISITING TEAM"  # what the Dual meet starter's cards say until a visiting team is chosen
@@ -202,6 +232,91 @@ class Library:  # pylint: disable=too-many-public-methods  # the one way in to t
         self.team_dir = self.root / "Team"
         self.events_dir.mkdir(parents=True, exist_ok=True)
         self.team_dir.mkdir(parents=True, exist_ok=True)
+
+    # --- bringing an older Loop Builder folder over (a Mac's Documents › Loop Builder, up to 0.1.6) ---
+
+    def move_from(self, old):
+        """Move an older Loop Builder folder's events, team logos and settings into this one. Events keep their
+        names, "<name> (2)" if one here has it already; saved teams join the ones here; settings come over where
+        this folder still has the default, and the team logo only if there is none here yet. What's left of the
+        old folder (its log, say) stays. Returns events moved."""
+        old = Path(old)
+        if not (old / "Events").is_dir() or old.resolve() == self.root.resolve():
+            raise LibraryError(f"no Loop Builder folder at {old}")
+        moved = 0
+        for folder in sorted(p for p in (old / "Events").iterdir() if p.is_dir() and (p / "event.yaml").exists()):
+            self._move_event(folder)
+            moved += 1
+        if (old / "settings.json").exists():
+            self._take_settings(old / "settings.json")
+        if (old / "Team").is_dir():
+            for item in (old / "Team").iterdir():
+                if item.name == "Teams" and item.is_dir():
+                    self._move_teams(item)
+                elif not (self.team_dir / item.name).exists():
+                    shutil.move(str(item), str(self.team_dir / item.name))
+        for empty in (old / "Events", old / "Team"):
+            if empty.is_dir() and not any(empty.iterdir()):
+                empty.rmdir()
+        self.update_settings(documents_checked=True)
+        return moved
+
+    def _take_settings(self, path):
+        """Bring an older folder's settings over: the whole file when this folder has none yet, else only the
+        settings this folder still has at their defaults (a template folder picked here before the move stays).
+        The old file goes either way."""
+        if not self.settings_path.exists():
+            shutil.move(str(path), str(self.settings_path))
+            return
+        try:
+            theirs = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            theirs = {}
+        mine = self.settings()
+        take = {
+            k: v
+            for k, v in theirs.items()
+            if k in DEFAULT_SETTINGS and k != "documents_checked" and mine[k] == DEFAULT_SETTINGS[k] and v != mine[k]
+        }
+        if take:
+            self.update_settings(**take)
+        path.unlink()
+
+    def _move_event(self, folder):
+        """Move one event folder in, named "<name> (2)" when an event here already has its name, as imports are."""
+        try:
+            data = read_event_file(folder / "event.yaml")
+        except EventError:  # unreadable: moved as it is, for the person to deal with here
+            shutil.move(str(folder), str(self._free_folder(folder.name)))
+            return
+        name = str(data.get("event") or folder.name)
+        new, dest = self._free_name(name)
+        shutil.move(str(folder), str(dest))
+        if new != name:
+            data["event"] = new
+            (dest / "event.yaml").write_text(
+                yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding="utf-8"
+            )
+
+    def _move_teams(self, old_teams):
+        """Add an older folder's saved teams to the ones here: a team already here by name stays as it is, and a
+        team whose id is taken gets a free one. Teams not brought over stay where they were."""
+        try:
+            theirs = json.loads((old_teams / "teams.json").read_text(encoding="utf-8"))
+        except (FileNotFoundError, json.JSONDecodeError):
+            return
+        mine = [t for t in self.teams() if not t.get("home")]
+        for team in theirs:
+            logo = old_teams / str(team.get("logo", ""))
+            if not logo.is_file() or any(t["name"].lower() == str(team.get("name", "")).lower() for t in mine):
+                continue
+            team_id, n = team["id"], 2
+            while any(t["id"] == team_id for t in mine) or (self.teams_dir / f"{team_id}{logo.suffix}").exists():
+                team_id, n = f"{team['id']}-{n}", n + 1
+            self.teams_dir.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(logo), str(self.teams_dir / f"{team_id}{logo.suffix}"))
+            mine.append({**team, "id": team_id, "logo": f"{team_id}{logo.suffix}"})
+        self._save_teams(sorted(mine, key=lambda t: t["name"]))
 
     # --- settings ---
 

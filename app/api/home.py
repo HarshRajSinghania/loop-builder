@@ -15,7 +15,7 @@ from loopgen.loops import render_slide
 from loopgen.slides import MissingAsset, Renderer
 from loopgen.uploads import UploadError, prepare_upload
 
-from app.library import STARTERS, LibraryError
+from app.library import STARTERS, LibraryError, default_exports, old_mac_folder
 from app.version import COPYRIGHT, PROJECT_URL, RELEASES_URL, VERSION
 from app.api.state import legal_text, look_colours, png, template_folder_status
 from app.api.models import LookBody, NewEventBody, PathBody, SavePictureBody, SettingsBody
@@ -48,6 +48,9 @@ def register(app, ctx):
             "starters": [{"id": k, "title": v["title"], "about": v["about"]} for k, v in STARTERS.items()],
             "open": current.session.path.parent.name if current.session else None,
             "folder": str(lib.root),
+            "exports": str(default_exports(lib.root)),
+            # a Mac with the folder in Application Support: offer the Documents › Loop Builder of 0.1.6 and earlier
+            "offer_documents": bool(old_mac_folder(lib.root)) and not settings.get("documents_checked"),
             "version": VERSION,
             "update": update or None,
         }
@@ -61,6 +64,37 @@ def register(app, ctx):
             "update_check": bool(RELEASES_URL),
             "notices": legal_text("THIRD_PARTY_NOTICES.md"),
         }
+
+    @app.post("/api/library/move-documents")
+    def move_documents():
+        """Bring the events, team logos and settings of 0.1.6 and earlier over from Documents › Loop Builder.
+        Only when asked: looking in Documents is what makes macOS ask for permission."""
+        old = old_mac_folder(lib.root)
+        if old is None:  # not the Mac's own folder (another OS, or LOOPBUILDER_HOME): nothing is ever pulled in
+            raise HTTPException(404, "There's nothing to bring over into this Loop Builder folder.")
+        try:
+            found = (old / "Events").is_dir()
+        except PermissionError:
+            found = True  # macOS said no; the move below says so in words
+        if not found:
+            lib.update_settings(documents_checked=True)
+            raise HTTPException(404, f"There's no Loop Builder folder in Documents ({old}).")
+        try:
+            return {"moved": lib.move_from(old)}
+        except PermissionError as exc:
+            raise HTTPException(
+                422,
+                "macOS didn't let Loop Builder open your Documents folder. Allow it in System Settings › "
+                "Privacy & Security › Files and Folders, then try again.",
+            ) from exc
+        except (LibraryError, OSError) as exc:
+            raise HTTPException(422, f"couldn't move the events: {exc}") from exc
+
+    @app.post("/api/library/documents-checked")
+    def documents_checked():
+        """No events to bring over from Documents: stop offering."""
+        lib.update_settings(documents_checked=True)
+        return {"ok": True}
 
     @app.put("/api/settings")
     def save_settings(body: SettingsBody):

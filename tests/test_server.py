@@ -11,7 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
-from app.library import Library
+from app.library import Library, default_exports
 from app.server import create_app
 
 EXAMPLE = Path(__file__).resolve().parent.parent / "examples" / "dual-meet"
@@ -449,6 +449,30 @@ def test_settings_can_count_a_folders_templates_as_it_is_typed(client, tmp_path)
     assert count("") == {"found": False, "count": 0}
 
 
+def test_offer_and_bring_over_the_documents_folder(tmp_path, monkeypatch):
+    lib = Library(tmp_path / "Application Support" / "Loop Builder")
+    old = Library(tmp_path / "Documents" / "Loop Builder")
+    old.create("Sections", "sections")
+    monkeypatch.setattr("app.api.home.old_mac_folder", lambda root: old.root)  # as on a Mac
+    api = TestClient(create_app(library=lib))
+    assert api.get("/api/home").json()["offer_documents"]
+    assert api.post("/api/library/move-documents").json() == {"moved": 1}
+    home = api.get("/api/home").json()
+    assert [e["slug"] for e in home["events"]] == ["Sections"] and not home["offer_documents"]
+
+
+def test_no_documents_folder_or_no_thanks_stops_the_offer(tmp_path, monkeypatch):
+    lib = Library(tmp_path / "Application Support" / "Loop Builder")
+    monkeypatch.setattr("app.api.home.old_mac_folder", lambda root: tmp_path / "Documents" / "Loop Builder")
+    api = TestClient(create_app(library=lib))
+    assert api.post("/api/library/move-documents").status_code == 404
+    assert not api.get("/api/home").json()["offer_documents"]
+    lib.update_settings(documents_checked=False)
+    assert api.post("/api/library/documents-checked").json() == {"ok": True}
+    assert not api.get("/api/home").json()["offer_documents"]
+    assert api.get("/api/home").json()["exports"] == str(default_exports(lib.root))
+
+
 def test_a_template_folder_written_with_a_tilde_is_found_everywhere(client, tmp_path, monkeypatch):
     api, _ = client
     monkeypatch.setenv("HOME", str(tmp_path))  # ~ is tmp_path here: HOME on a Mac, USERPROFILE on Windows
@@ -494,3 +518,12 @@ def test_a_downloaded_package_leaves_no_temporary_folder(tmp_path, monkeypatch):
     res = TestClient(create_app(library=lib)).get(f"/api/events/{slug}/package")
     assert res.status_code == 200 and res.content[:2] == b"PK"  # the zip arrived
     assert made and not made[0].exists()
+
+
+def test_the_documents_offer_never_shows_for_another_folder(tmp_path, monkeypatch):
+    """Only the Mac's own Loop Builder folder offers to bring Documents › Loop Builder over: with LOOPBUILDER_HOME
+    (as the tests and testers use) one click would move someone's real events into a throwaway folder."""
+    monkeypatch.setenv("LOOPBUILDER_HOME", str(tmp_path / "Loop Builder"))
+    api = TestClient(create_app(library=Library()))  # the app's own way: the folder LOOPBUILDER_HOME names
+    assert not api.get("/api/home").json()["offer_documents"]
+    assert api.post("/api/library/move-documents").status_code == 404

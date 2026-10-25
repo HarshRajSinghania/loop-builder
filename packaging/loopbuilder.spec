@@ -56,4 +56,12 @@ if sys.platform == "darwin":
                  icon=str(ROOT / "packaging" / "icons" / "loop-builder.icns"),
                  info_plist={"NSHighResolutionCapable": True, "CFBundleShortVersionString": VERSION,
                              "CFBundleVersion": VERSION,
-                             "NSHumanReadableCopyright": "© 2026 Mike Huot. Apache License 2.0."})
+                             "NSHumanReadableCopyright": "© 2026 Mike Huot. Apache License 2.0.",
+                             # macOS asks before an app uses these folders; this is what it says why. Loop Builder
+                             # keeps its own files in Application Support, so it asks only for a folder you name.
+                             "NSDocumentsFolderUsageDescription":
+                                 "Loop Builder opens the template, picture and export folders you choose here.",
+                             "NSDownloadsFolderUsageDescription":
+                                 "Loop Builder opens the template, picture and export folders you choose here.",
+                             "NSDesktopFolderUsageDescription":
+                                 "Loop Builder opens the template, picture and export folders you choose here."})

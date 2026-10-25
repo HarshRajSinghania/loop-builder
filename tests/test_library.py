@@ -150,6 +150,42 @@ def test_pictures_are_kept_for_every_event_and_copied_into_one_on_use(lib, tmp_p
         lib.use_picture("gone", folder)
 
 
+def test_the_loop_builder_folder_is_in_application_support_on_a_mac(tmp_path, monkeypatch):
+    from app import library  # pylint: disable=import-outside-toplevel
+
+    monkeypatch.delenv("LOOPBUILDER_HOME", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))  # Path.home() on Windows
+    monkeypatch.setattr(library.sys, "platform", "darwin")
+    assert library.default_root() == tmp_path / "Library" / "Application Support" / "Loop Builder"
+    assert library.default_exports(library.default_root()) == tmp_path / "Movies" / "Loop Builder"
+    monkeypatch.setattr(library.sys, "platform", "win32")
+    assert library.default_root() == library.documents_root() == tmp_path / "Documents" / "Loop Builder"
+    assert library.default_exports(library.default_root()) == tmp_path / "Documents" / "Loop Builder" / "Exports"
+    monkeypatch.setenv("LOOPBUILDER_HOME", str(tmp_path / "elsewhere"))
+    assert library.default_root() == tmp_path / "elsewhere"
+
+
+def test_move_from_brings_an_older_folder_over(tmp_path):
+    old = Library(tmp_path / "Documents")
+    kept = old.create("Sections", "sections")
+    old.create("Dual", "dual-meet")
+    old.update_settings(team="Lakeview", pool_lanes=6)
+    (old.team_dir / "logo.png").write_bytes(b"png")
+    (old.root / "loop-builder.log").write_text("log")
+    new = Library(tmp_path / "Application Support")
+    here = new.create("Sections", "blank")  # already here: the moved one is told apart
+    assert new.move_from(old.root) == 2
+    names = sorted(e["slug"] for e in new.events())
+    assert names == sorted([here, f"{kept} (2)", "Dual"])
+    settings = new.settings()
+    assert settings["team"] == "Lakeview" and settings["pool_lanes"] == 6 and settings["documents_checked"]
+    assert (new.team_dir / "logo.png").read_bytes() == b"png"
+    assert not (old.root / "Events").exists() and (old.root / "loop-builder.log").exists()  # the rest stays
+    with pytest.raises(LibraryError):
+        new.move_from(old.root)  # nothing left to bring over
+
+
 def test_importing_a_renamed_events_package_tells_the_copy_apart(lib, tmp_path):
     """A renamed event keeps its first folder: checking folder names alone, the first import shared its name."""
     slug = lib.create("Round 4", "blank")
@@ -227,3 +263,54 @@ def test_the_command_line_refuses_slide_zero(monkeypatch, capsys):
     with pytest.raises(SystemExit):
         cli()
     assert "whole number from 1" in capsys.readouterr().err
+
+
+def test_only_the_macs_own_folder_offers_the_documents_one(tmp_path, monkeypatch):
+    from app import library  # pylint: disable=import-outside-toplevel
+
+    monkeypatch.delenv("LOOPBUILDER_HOME", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    monkeypatch.setattr(library.sys, "platform", "darwin")
+    assert library.old_mac_folder(library.default_root()) == tmp_path / "Documents" / "Loop Builder"
+    assert library.old_mac_folder(tmp_path / "elsewhere") is None
+    monkeypatch.setenv("LOOPBUILDER_HOME", str(tmp_path / "elsewhere"))  # a tester's throwaway folder
+    assert library.old_mac_folder(library.default_root()) is None
+    monkeypatch.delenv("LOOPBUILDER_HOME")
+    monkeypatch.setattr(library.sys, "platform", "win32")  # Windows keeps Documents: nothing to bring over
+    assert library.old_mac_folder(library.default_root()) is None
+
+
+def test_move_from_adds_saved_teams_and_tells_events_apart(tmp_path):
+    old = Library(tmp_path / "Documents")
+    old.create("Meet", "blank")
+    old.teams_dir.mkdir(parents=True)
+    (old.teams_dir / "teams.json").write_text(
+        '[{"id": "lakeview", "name": "Lakeview", "logo": "lakeview.png"},'
+        ' {"id": "riverside", "name": "Riverside", "logo": "riverside.png"}]',
+        encoding="utf-8",
+    )
+    for team in ("lakeview", "riverside"):
+        (old.teams_dir / f"{team}.png").write_bytes(b"png")
+    new = Library(tmp_path / "Application Support")
+    new.create("Meet", "blank")
+    new.teams_dir.mkdir(parents=True)  # a team added before bringing the old folder over
+    (new.teams_dir / "teams.json").write_text('[{"id": "lakeview", "name": "Lakeview Otters", "logo": "lakeview.png"}]')
+    (new.teams_dir / "lakeview.png").write_bytes(b"new")
+    new.move_from(old.root)
+    assert sorted(t["name"] for t in new.teams()) == ["Lakeview", "Lakeview Otters", "Riverside"]
+    assert (new.teams_dir / "lakeview.png").read_bytes() == b"new"  # the one here is untouched
+    assert sorted(e["name"] for e in new.events()) == ["Meet", "Meet (2)"]
+
+
+def test_move_from_fills_in_settings_this_folder_still_has_at_their_defaults(tmp_path):
+    """The template folder is often picked before the events are brought over; that choice stays, the rest comes."""
+    old = Library(tmp_path / "Documents")
+    old.create("Sections", "sections")
+    old.update_settings(team="Lakeview", pool_lanes=6, templates=str(tmp_path / "old-boards"))
+    new = Library(tmp_path / "Application Support")
+    new.update_settings(templates=str(tmp_path), pool_lanes=10)  # chosen here first: kept
+    assert new.move_from(old.root) == 1
+    settings = new.settings()
+    assert settings["team"] == "Lakeview" and settings["pool_lanes"] == 10 and settings["templates"] == str(tmp_path)
+    assert settings["documents_checked"] and not (old.root / "settings.json").exists()
