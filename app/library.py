@@ -19,7 +19,7 @@ from pathlib import Path
 import yaml
 from PIL import Image
 
-from loopgen.event import DEFAULT_THEME
+from loopgen.event import DEFAULT_THEME, EventError, read_event_file
 from loopgen.uploads import prepare_logo, prepare_picture
 
 LOOK_COLOURS = ("primary", "accent", "text", "muted", "background")  # the colours a look sets
@@ -392,8 +392,8 @@ class Library:  # pylint: disable=too-many-public-methods  # the one way in to t
         found = []
         for path in self.events_dir.glob("*/event.yaml"):
             try:
-                data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-            except yaml.YAMLError:
+                data = read_event_file(path)
+            except EventError:  # a hand-edited or half-synced file: left out, so the other events still show
                 continue
             found.append(
                 {

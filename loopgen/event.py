@@ -101,17 +101,41 @@ def _slide(item, where):
     if not isinstance(item, dict) or len(item) != 1 or next(iter(item)) not in SLIDE_TYPES:
         raise EventError(f"{where}: a slide is one of {', '.join(SLIDE_TYPES)}, e.g. '- card: {{...}}'")
     kind, props = next(iter(item.items()))
+    if props is not None and not isinstance(props, dict):
+        raise EventError(f"{where}: a {kind}'s settings go under it as name: value, e.g. '- {kind}: {{...}}'")
     props = dict(props or {})
     common = {k: props.pop(k) for k in COMMON if k in props}
     return Slide(kind, props, **common)
 
 
+def read_event_file(path):
+    """An event file's data, if it has the shape load_event reads: a mapping, its loops a list of mappings. A file
+    that isn't (a YAML slip, a half-synced copy) raises EventError saying where, rather than a crash further on."""
+    try:
+        data = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+    except yaml.YAMLError as exc:
+        mark = getattr(exc, "problem_mark", None)
+        raise EventError(
+            f"{path}: not a readable event file{f' (line {mark.line + 1})' if mark else ''}: "
+            f"{getattr(exc, 'problem', None) or exc}"
+        ) from exc
+    if not isinstance(data, dict) or not isinstance(data.get("loops"), list):
+        raise EventError(f"{path}: an event file needs 'loops', a list of loops")
+    for key in ("theme", "board", "template_panels"):
+        if not isinstance(data.get(key) or {}, dict):
+            raise EventError(f"{path}: '{key}' needs name: value settings")
+    for n, raw in enumerate(data["loops"], 1):
+        if not isinstance(raw, dict):
+            raise EventError(f"{path}: loop {n} needs a name and slides, e.g. '- name: Welcome'")
+        if not isinstance(raw.get("slides") or [], list):
+            raise EventError(f"{path}: loop {n} ({raw.get('name', '?')}): 'slides' needs to be a list")
+    return data
+
+
 def load_event(path, templates=None):
     """Read an event file; `templates` (the DisplayLink Plus template folder setting) overrides the file's own."""
     path = Path(path).expanduser().resolve()
-    data = yaml.safe_load(path.read_text(encoding="utf-8"))
-    if not isinstance(data, dict) or "loops" not in data:
-        raise EventError(f"{path}: an event file needs 'loops'")
+    data = read_event_file(path)
     board = data.get("board") or {}
     theme = {**DEFAULT_THEME, **(data.get("theme") or {})}
     panels = {}
@@ -137,12 +161,16 @@ def load_event(path, templates=None):
                 if s.id in by_id:
                     raise EventError(f"{where}: slide id {s.id!r} is used twice")
                 by_id[s.id] = s
+        try:
+            hold, fade = float(raw.get("hold", 10)), float(raw.get("fade", 0.5))
+        except (TypeError, ValueError) as exc:
+            raise EventError(f"{where}: hold and fade are seconds, e.g. 'hold: 10'") from exc
         loops.append(
             Loop(
                 raw.get("name") or f"Loop {n}",
                 slides,
-                float(raw.get("hold", 10)),
-                float(raw.get("fade", 0.5)),
+                hold,
+                fade,
                 not any(s.type == "countdown" for s in slides),  # older files' `repeat` is ignored
             )
         )
