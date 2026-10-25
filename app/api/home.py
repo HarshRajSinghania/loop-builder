@@ -4,7 +4,6 @@ import tempfile
 import zipfile
 from pathlib import Path
 
-import yaml
 from fastapi import Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response
 

@@ -111,8 +111,13 @@ def _slide(item, where):
 def read_event_file(path):
     """An event file's data, if it has the shape load_event reads: a mapping, its loops a list of mappings. A file
     that isn't (a YAML slip, a half-synced copy) raises EventError saying where, rather than a crash further on."""
+    return parse_event(Path(path).read_text(encoding="utf-8"), path)
+
+
+def parse_event(text, path):
+    """read_event_file for text already in hand (an event.yaml inside a .loopevent); `path` names it in errors."""
     try:
-        data = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+        data = yaml.safe_load(text)
     except yaml.YAMLError as exc:
         mark = getattr(exc, "problem_mark", None)
         raise EventError(
@@ -124,6 +129,9 @@ def read_event_file(path):
     for key in ("theme", "board", "template_panels"):
         if not isinstance(data.get(key) or {}, dict):
             raise EventError(f"{path}: '{key}' needs name: value settings")
+    for name, panel in (data.get("template_panels") or {}).items():
+        if not isinstance(panel, dict) or "panel" not in panel:
+            raise EventError(f"{path}: template_panels: {name} needs a 'panel'")
     for n, raw in enumerate(data["loops"], 1):
         if not isinstance(raw, dict):
             raise EventError(f"{path}: loop {n} needs a name and slides, e.g. '- name: Welcome'")
