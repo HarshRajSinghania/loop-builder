@@ -51,6 +51,8 @@ def main():
         event = load_event(args.event, args.templates)
         if args.slide_png:
             loop, n, out = args.slide_png
+            if not n.isdigit() or int(n) < 1:
+                ap.error(f"--slide-png: the slide number is a whole number from 1, not {n!r}")
             img = render_slide(event, event.loop(loop), int(n) - 1, args.at)
             if args.scale > 1:
                 img = img.resize((img.width * args.scale, img.height * args.scale), 0)

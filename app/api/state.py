@@ -16,7 +16,7 @@ from fastapi import HTTPException
 from loopgen import load_event
 from loopgen.checks import full_url
 from loopgen.draw import decode_qr
-from loopgen.event import DEFAULT_THEME, EventError
+from loopgen.event import DEFAULT_THEME, EventError, read_event_file
 from loopgen.slides import Renderer
 
 from app.library import LOOK_COLOURS, LibraryError
@@ -39,7 +39,7 @@ class Session:
         self.reload()
 
     def reload(self):
-        self.data = yaml.safe_load(self.path.read_text(encoding="utf-8"))
+        self.data = read_event_file(self.path)  # a malformed file: EventError, so opening it answers 422
         own = self.data.get("templates")
         self.folder_source = "override" if self.override else "event" if own else "settings"
         self.event = load_event(self.path, self.override or (None if own else self.default()))

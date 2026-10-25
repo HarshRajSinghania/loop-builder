@@ -4,12 +4,11 @@ import tempfile
 import zipfile
 from pathlib import Path
 
-import yaml
 from fastapi import Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response
 
 from loopgen import load_event
-from loopgen.event import DEFAULT_THEME, Event, EventError, Loop, _slide
+from loopgen.event import DEFAULT_THEME, Event, EventError, Loop, _slide, read_event_file
 from loopgen.loops import render_slide
 from loopgen.slides import MissingAsset, Renderer
 from loopgen.uploads import UploadError, prepare_upload
@@ -244,7 +243,7 @@ def register(app, ctx):
         """The event's first slide, for its row on the home screen."""
         try:
             path = library_call(lib.event_file, slug)
-            own = (yaml.safe_load(path.read_text(encoding="utf-8")) or {}).get("templates")
+            own = read_event_file(path).get("templates")
             event = load_event(path, folder_override or (None if own else lib.settings().get("templates")))
             first = event.loops[0].slides[0]
             img = render_slide(event, event.loops[0], 0, 3.0 if first.type == "crawl" else None)
