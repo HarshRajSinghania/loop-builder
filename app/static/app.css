@@ -170,3 +170,7 @@ dialog.wide{width:min(1100px,96vw)}
 .picture-grid.choosing .thumb{cursor:pointer}.picture-grid.choosing .thumb:hover,.picture-grid.choosing .thumb:focus-visible{border-color:var(--blue)}
 .picture-grid .empty{grid-column:1/-1;background:none;border:0;color:var(--soft)}
 .picture-grid .row{gap:6px}
+.extra-pic{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.place-grid{display:inline-grid;grid-template-columns:repeat(3,22px);gap:2px}
+.place-grid button{width:22px;height:22px;padding:0;font-size:12px;line-height:1;border:1px solid var(--line);border-radius:4px;background:var(--panel);color:var(--soft);cursor:pointer}
+.place-grid button[aria-pressed="true"]{background:var(--btn);border-color:var(--btn);color:#fff}

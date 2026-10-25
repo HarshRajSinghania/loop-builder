@@ -20,6 +20,9 @@ LINK_BAND = 14  # px under a Text + QR code for its link
 LINK_OVERHANG = 10  # how far the link may run past each side of the code
 MAX_LANES = 10  # a lanes slide shows up to ten lanes, numbered no higher than 10
 PAGE_FADE = 0.5  # seconds of crossfade between the pages of a lanes slide
+BADGE_SIZES = {"S": 24, "M": 36, "L": 52, "XL": 80}  # an extra picture's height on the board, px
+BADGE_INSET = 6  # px from the board's edges
+PLACES = ("top-left", "top", "top-right", "left", "center", "right", "bottom-left", "bottom", "bottom-right")
 
 
 def lane_range(p):
@@ -54,6 +57,23 @@ class Clip:
 
 def still(img, frames):
     return Clip(lambda: iter([(img, frames)]), img, img, frames, False)
+
+
+def with_badges(clip, badges):
+    """The clip with its extra pictures pasted on every frame, in order (a still is pasted once, not per frame)."""
+    last = [None, None]
+
+    def put(img):
+        if img is not last[0]:
+            out = img.convert("RGB") if img.mode not in ("RGB", "RGBA") else img.copy()
+            for pic, at in badges:
+                out.paste(pic, at, pic)
+            last[:] = [img, out]  # holding img keeps its id from being reused by a new frame
+        return last[1]
+
+    seek = clip.seek and (lambda k: put(clip.seek(k)))
+    return Clip(lambda: ((put(img), n) for img, n in clip.runs()), put(clip.first), put(clip.last), clip.frames,
+                clip.timed, seek)
 
 
 def seconds(value):
@@ -194,7 +214,39 @@ class Renderer:
 
     def render(self, slide, hold):
         frames = round(hold * self.fps)
-        return getattr(self, "_" + slide.type)(slide.props, frames)
+        clip = getattr(self, "_" + slide.type)(slide.props, frames)
+        badges = [b for b in map(self.badge, slide.badges or []) if b]
+        return with_badges(clip, badges) if badges else clip
+
+    def badge(self, spec):
+        """An extra picture over the slide (a badge, a league logo) as (picture, top-left position), or None
+        when it has no picture yet. `place` is one of PLACES; `size` one of BADGE_SIZES."""
+        if not isinstance(spec, dict) or not spec.get("file"):
+            return None
+        try:
+            pic = self.open_image(spec["file"], "extra picture").convert("RGBA")
+        except MissingAsset as exc:
+            self.warn(f"{exc}; the slide is drawn without it")
+            return None
+        h = BADGE_SIZES.get(str(spec.get("size", "M")).upper(), BADGE_SIZES["M"])
+        h = min(h, self.H - 2 * BADGE_INSET)
+        w = min(round(pic.width * h / pic.height), self.W // 2)  # a wide picture stops at half the board
+        h = max(1, round(pic.height * w / pic.width))
+        pic = pic.resize((max(1, w), h), Image.Resampling.LANCZOS)
+        place = spec.get("place") if spec.get("place") in PLACES else "top-right"
+        if place.endswith("left"):
+            x = BADGE_INSET
+        elif place.endswith("right"):
+            x = self.W - pic.width - BADGE_INSET
+        else:
+            x = (self.W - pic.width) // 2
+        if place.startswith("top"):
+            y = BADGE_INSET
+        elif place.startswith("bottom"):
+            y = self.H - pic.height - BADGE_INSET
+        else:
+            y = (self.H - pic.height) // 2
+        return pic, (x, y)
 
     def _lanes(self, p, frames):
         """Guest lane assignments, a page at a time: each page shows the title and its share of the lanes
@@ -320,7 +372,22 @@ class Renderer:
             self.bars(d, bars)
             top = 6 + (BAR if bars in ("top", "both") else 0)
             bottom = self.H - 6 - (BAR if bars in ("bottom", "both") else 0)
-        x1 = self.W
+        x0, x1 = 0, self.W
+        # a picture: Logo center's defaults to the theme logo; other layouts show one only when it's chosen
+        pic = self.picture(p.get("picture", "logo" if layout == "logo-center" else None))
+        if layout == "text-picture":  # the picture beside the lines, as Text + QR has its code
+            if pic is None:
+                self.warn("this layout needs a picture: pick one under Picture")
+            else:
+                ph = min(self.H - 20, top and bottom - top)
+                pw = min(round(pic.width * ph / pic.height), int(self.W * 0.45))
+                ph = round(pic.height * pw / pic.width)
+                pic = pic.resize((pw, ph), Image.Resampling.LANCZOS)
+                left = p.get("picture_side") == "left"
+                px = 6 if left else self.W - pw - 6
+                img.paste(pic, (px, top + (bottom - top - ph) // 2), pic)
+                x0, x1 = (px + pw + 6, self.W) if left else (0, px - 6)
+            pic = None
         if layout == "text-qr":
             show_link = bool(p.get("show_url")) and draw.full_url(p.get("qr"))
             size = min(self.H - 20 - (LINK_BAND if show_link else 0), int(self.W * 0.5))
@@ -340,21 +407,24 @@ class Renderer:
                 x1 = min(x1, round(cx - column / 2))
                 self.link_under(d, p["qr"], cx, qy + code.height + 3, column, self.link_colour(p))
             x1 -= 6
-        heights = [self.line(l, x1 - 2 * MARGIN)[3] for l in lines]
-        pic = self.picture(p.get("picture", "logo")) if layout == "logo-center" else None
+        heights = [self.line(l, x1 - x0 - 2 * MARGIN)[3] for l in lines]
+        gap = 18 if layout != "banner" else 6
         if pic is None:
-            self.draw_lines(d, lines, 0, x1, draw.distribute(top, bottom, heights, 18 if layout != "banner" else 6))
+            self.draw_lines(d, lines, x0, x1, draw.distribute(top, bottom, heights, gap))
             return still(img, frames)
-        split = next((i + 1 for i, l in enumerate(lines) if l["size"] == "L"), 1)  # picture sits under the big line
+        # in the lines' column: above them, under the big line (as Logo center always had it), or below them
+        place = p.get("picture_place", "middle")
+        big_line = next((i + 1 for i, l in enumerate(lines) if l["size"] == "L"), 1)
+        split = {"above": 0, "below": len(lines)}.get(place, min(big_line, len(lines)))
         avail = bottom - top - sum(heights) - 4 * len(lines)
         ph = max(8, min(int(p.get("picture_height", 70)), avail))
-        pw = min(round(pic.width * ph / pic.height), self.W - 2 * MARGIN)
-        ph = round(pic.height * pw / pic.width)
-        tops = draw.distribute(top, bottom, heights[:split] + [ph] + heights[split:], 18)
-        self.draw_lines(d, lines[:split], 0, x1, tops[:split])
+        pw = min(round(pic.width * ph / pic.height), x1 - x0 - 2 * MARGIN)
+        ph = max(1, round(pic.height * pw / pic.width))
+        tops = draw.distribute(top, bottom, heights[:split] + [ph] + heights[split:], gap)
+        self.draw_lines(d, lines[:split], x0, x1, tops[:split])
         pic = pic.resize((pw, ph), Image.Resampling.LANCZOS)
-        img.paste(pic, ((self.W - pw) // 2, tops[split]), pic)
-        self.draw_lines(d, lines[split:], 0, x1, tops[split + 1 :])
+        img.paste(pic, (round((x0 + x1 - pw) / 2), tops[split]), pic)
+        self.draw_lines(d, lines[split:], x0, x1, tops[split + 1 :])
         return still(img, frames)
 
     def _qr(self, p, frames):
