@@ -1,5 +1,6 @@
 """The events home, Settings, Teams and Pictures: creating, opening, importing and deleting events."""
 
+import shutil
 import tempfile
 import zipfile
 from pathlib import Path
@@ -7,6 +8,7 @@ from pathlib import Path
 import yaml
 from fastapi import Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response
+from starlette.background import BackgroundTask
 
 from loopgen import load_event
 from loopgen.event import DEFAULT_THEME, Event, EventError, Loop, _slide
@@ -277,5 +279,11 @@ def register(app, ctx):
     @app.get("/api/events/{slug}/package")
     def download_package(slug: str):
         tmp = Path(tempfile.mkdtemp())
-        dest = library_call(lib.export_package, slug, tmp / slug)
-        return FileResponse(dest, filename=dest.name, media_type="application/zip")
+        try:
+            dest = library_call(lib.export_package, slug, tmp / slug)
+        except Exception:
+            shutil.rmtree(tmp, ignore_errors=True)
+            raise
+        # the zip is only on its way to the browser: its folder goes once it's sent
+        cleanup = BackgroundTask(shutil.rmtree, tmp, ignore_errors=True)
+        return FileResponse(dest, filename=dest.name, media_type="application/zip", background=cleanup)

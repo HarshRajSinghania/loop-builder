@@ -14,20 +14,27 @@ const el = (tag, attrs = {}, ...kids) => {
   return node;
 };
 const clock = (s) => (s == null ? "—" : `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`);
+const isJson = (res) => !!res.headers.get("content-type")?.includes("json");
+// Why a request failed, in words: the server's reason when it gave one, else a plain line. An unexpected server
+// error answers in plain text ("Internal Server Error"), which must never surface as a JSON parse error.
+const failure = async (res) => {
+  const data = isJson(res) ? await res.json().catch(() => null) : null;
+  const detail = data && data.detail;
+  if (Array.isArray(detail)) return detail.map((d) => d.msg || String(d)).join("; "); // a request FastAPI refused
+  return detail || `Something went wrong in Loop Builder (error ${res.status}). loop-builder.log in the Loop Builder folder says more.`;
+};
 const api = async (url, method = "GET", body) => {
   const res = await fetch(url, { method, headers: body ? { "Content-Type": "application/json" } : {},
     body: body ? JSON.stringify(body) : undefined });
-  const data = res.headers.get("content-type")?.includes("json") ? await res.json() : null;
-  if (!res.ok) throw new Error((data && data.detail) || `${res.status}`);
-  return data;
+  if (!res.ok) throw new Error(await failure(res));
+  return isJson(res) ? res.json() : null;
 };
 const upload = async (url, file) => {
   const form = new FormData();
   form.append("file", file);
   const res = await fetch(url, { method: "POST", body: form });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.detail || `${res.status}`);
-  return data;
+  if (!res.ok) throw new Error(await failure(res));
+  return res.json();
 };
 
 // The app window offers the system's own pickers; a browser tab (developer use) falls back to typing a path.

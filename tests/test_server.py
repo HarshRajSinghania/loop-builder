@@ -1,6 +1,7 @@
 """The editor's local API: loop edits save, and an edit that breaks the event changes nothing."""
 
 import shutil
+import tempfile
 import threading
 import time
 from urllib.parse import unquote
@@ -459,3 +460,13 @@ def test_a_template_folder_written_with_a_tilde_is_found_everywhere(client, tmp_
     assert home["settings"]["templates"] == str(tmp_path / "Boards")
     assert home["templates_found"] and home["template_count"] == 1
     assert api.get("/api/event").json()["templates_found"]
+
+
+def test_a_downloaded_package_leaves_no_temporary_folder(tmp_path, monkeypatch):
+    lib = Library(tmp_path / "Loop Builder")
+    slug = lib.create("Download", "blank")
+    made, mkdtemp = [], tempfile.mkdtemp
+    monkeypatch.setattr("app.api.home.tempfile.mkdtemp", lambda: made.append(Path(mkdtemp())) or str(made[-1]))
+    res = TestClient(create_app(library=lib)).get(f"/api/events/{slug}/package")
+    assert res.status_code == 200 and res.content[:2] == b"PK"  # the zip arrived
+    assert made and not made[0].exists()
