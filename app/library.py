@@ -155,6 +155,37 @@ def default_root():
     return Path.home() / "Documents" / "Loop Builder"
 
 
+VISITOR_PLACEHOLDER = "VISITING TEAM"  # what the Dual meet starter's cards say until a visiting team is chosen
+
+
+def apply_visitor(data, visitor):
+    """Put a visiting team ({"name", "logo"}) on an event's cards, in its file's data. A card line that still says
+    VISITING TEAM, or the previous visiting team's name, gets the new name, and those cards' picture shows the new
+    logo where it showed ours or the previous visitor's. Lines typed by hand are left alone. Returns cards changed."""
+    old = data.get("visitor") or {}
+    changed = 0
+    for loop in data.get("loops") or []:
+        for slide in loop.get("slides") or []:
+            card = slide.get("card") if isinstance(slide, dict) else None
+            if not isinstance(card, dict):
+                continue
+            lines = [line for line in card.get("lines") or [] if isinstance(line, dict)]
+            ours = [
+                line
+                for line in lines
+                if str(line.get("text", "")).strip().upper() == VISITOR_PLACEHOLDER
+                or (old.get("name") and str(line.get("text", "")).strip() == old["name"])
+            ]
+            for line in ours:
+                line["text"] = visitor["name"]
+            if ours:
+                changed += 1
+                if card.get("layout") == "logo-center" and card.get("picture", "") in ("", "logo", old.get("logo")):
+                    card["picture"] = visitor["logo"]
+    data["visitor"] = {"name": visitor["name"], "logo": visitor["logo"]}
+    return changed
+
+
 def _slug(name):
     """A folder name from an event name: readable, and safe on Windows and Mac."""
     cleaned = re.sub(r'[\\/:*?"<>|]+', "-", name).strip(" .")
@@ -261,6 +292,15 @@ class Library:  # pylint: disable=too-many-public-methods  # the one way in to t
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(self.team_logo_path(team), target)
         return {"name": team["name"], "logo": f"assets/teams/{team['logo']}"}
+
+    def set_visitor(self, slug, team_id):
+        """Make a team the visiting team of an event that isn't open (see apply_visitor); returns cards changed."""
+        path = self.event_file(slug)
+        visitor = self.use_team(team_id, path.parent)
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        changed = apply_visitor(data, visitor)
+        path.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding="utf-8")
+        return changed
 
     # --- events ---
 

@@ -128,8 +128,10 @@
 <dialog id="details">
   <form method="dialog" class="export">
     <h2>Event</h2>
-    <p class="muted">The name and date the events home shows. Changing them can be undone.</p>
+    <p class="muted">The name and date the events home shows, and who’s visiting. Changing them can be undone.</p>
     <div class="row"><label class="lbl grow">Event name<input id="details-name" class="field"></label><label class="lbl">Date<input id="details-date" class="field" type="date"></label></div>
+    <label class="lbl">Visiting team<select id="details-visitor" class="field"></select></label>
+    <p class="muted">The visiting team’s name and logo go on every card that says VISITING TEAM, or the last visiting team’s name.</p>
     <p id="details-status" class="warn" aria-live="polite"></p>
     <div class="row end"><button class="btn" value="close">Cancel</button><button class="btn btn-primary" type="button" id="details-save">Save</button></div>
   </form>

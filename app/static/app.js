@@ -51,7 +51,7 @@ async function loadEvent(keepEditor = false) {
   state.event = await api("/api/event");
   if (state.templatesFor !== templatesKey()) await loadTemplates(); // the folder changed, or went missing or came back
   $("#event-name").replaceChildren(el("a", { href: "/" }, "Events"), " / ",
-    el("button", { class: "crumb-edit", type: "button", title: "Rename the event or change its date", on: { click: openDetails } },
+    el("button", { class: "crumb-edit", type: "button", title: "Rename the event, change its date or its visiting team", on: { click: openDetails } },
       `${state.event.name}${state.event.date ? " · " + state.event.date : ""}`));
   renderTabs();
   renderLoop();
@@ -751,6 +751,30 @@ const pagesLabel = (sl) => {
   return pages > 1 ? ` × ${pages}` : "";
 };
 
+// One team in a run of lanes at once (a dual meet's visitors in 5–8), instead of a pick per lane. It starts on the
+// visiting team and the second half of the lanes when the event has one, else on your team and every lane.
+function fillLanes(first, last) {
+  if (!state.teams.length) return null;
+  const visitor = visitorTeam(), lanes = Array.from({ length: last - first + 1 }, (_, k) => first + k);
+  const from = visitor ? first + Math.ceil(lanes.length / 2) : first;
+  const pick = (label, value) => el("select", { class: "field", "aria-label": label },
+    lanes.map((n) => el("option", { value: n, selected: n === value }, String(n))));
+  const fromPick = pick("Fill from lane", from), toPick = pick("Fill to lane", last);
+  const teamPick = el("select", { class: "field", "aria-label": "Team for those lanes" },
+    state.teams.map((t) => el("option", { value: t.id, selected: visitor ? t.id === visitor.id : !!t.home }, t.name)));
+  return el("div", { class: "row fill-lanes" }, el("span", {}, "Fill lanes"), fromPick, el("span", {}, "to"), toPick,
+    el("span", {}, "with"), teamPick, el("button", { class: "btn", type: "button", on: { click: async () => {
+      const a = Number(fromPick.value), b = Number(toPick.value);
+      if (b < a) { flash("The first lane comes before the last one."); return; }
+      let lane;
+      try { lane = await api(`/api/teams/${encodeURIComponent(teamPick.value)}/use`, "POST"); }
+      catch (err) { flash(err.message); return; }
+      for (let n = a; n <= b; n++) P().lanes[n - first] = { ...lane };
+      previewDraft(); renderEditor();
+      flash(`${lane.name} in lanes ${a}–${b}`);
+    } } }, "Fill"));
+}
+
 function lanesEditor(p) {
   p.lanes = p.lanes || [];
   if (p.count != null && p.last == null) { // older slides kept a count: store the lane range instead
@@ -794,14 +818,14 @@ function lanesEditor(p) {
       holdField()),
     roleColour("Lane label colour", "label_color", "accent"),
     pages > 1 && el("p", { class: "muted" }, `Shows ${pages} pages, ${perPage} lanes at a time, each for the hold time.`),
-    group(`Teams by lane · ${count} lanes`, ...rows,
+    group(`Teams by lane · ${count} lanes`, fillLanes(first, last), ...rows,
       el("p", { class: "muted" }, "Pick a team from your library (its logo is copied into this event), then adjust the name if needed. Put a | where a long name should break onto two lines."),
-      el("button", { class: "btn", type: "button", style: "align-self:flex-start", on: { click: manageTeams } }, "Add or manage teams…")),
+      el("button", { class: "btn", type: "button", style: "align-self:flex-start", on: { click: () => manageTeams() } }, "Add or manage teams…")),
   ];
 }
 
 // The team library: logos kept for every event.
-async function manageTeams() {
+async function manageTeams(after) {
   const dialog = $("#teams-dialog");
   const render = async () => {
     state.teams = await api("/api/teams");
@@ -817,7 +841,7 @@ async function manageTeams() {
   };
   await render();
   $("#team-status").textContent = "";
-  dialog.onclose = () => renderEditor();
+  dialog.onclose = () => { renderEditor(); if (after) after(); };
   dialog.showModal();
   $("#team-add").onclick = async () => {
     const file = $("#team-file").files[0], name = $("#team-name").value.trim();
@@ -1128,7 +1152,26 @@ $("#theme-save").addEventListener("click", async () => {
 });
 
 // The event's name and date, from its header: a duplicate starts as "<name> (copy)", dated today.
+// The visiting team, from Teams. Its file name in the event (assets/teams/<file>) says which team it is.
+const visitorTeam = () => {
+  const v = state.event.visitor;
+  return v && v.logo ? state.teams.find((t) => !t.home && v.logo.endsWith(`/${t.logo}`)) : null;
+};
+function fillVisitorPick() {
+  const current = visitorTeam();
+  $("#details-visitor").replaceChildren(
+    el("option", { value: "" }, current ? "" : state.event.visitor ? state.event.visitor.name : "— none yet —"),
+    ...state.teams.filter((t) => !t.home).map((t) => el("option", { value: t.id, selected: current && current.id === t.id }, t.name)),
+    el("option", { value: "__manage" }, "Add or manage teams…"));
+  if (current) $("#details-visitor").firstChild.remove(); // a current team needs no blank choice
+}
+$("#details-visitor").addEventListener("change", (e) => {
+  if (e.target.value !== "__manage") return;
+  fillVisitorPick();
+  manageTeams(fillVisitorPick); // back to this dialog's choice, with any team just added
+});
 function openDetails() {
+  fillVisitorPick();
   $("#details-name").value = state.event.name;
   $("#details-date").value = state.event.date || "";
   $("#details-status").textContent = "";
@@ -1138,11 +1181,19 @@ function openDetails() {
 async function saveDetails() {
   const name = $("#details-name").value.trim();
   if (!name) { $("#details-status").textContent = "Give the event a name."; $("#details-name").focus(); return; }
-  try { await api("/api/event/details", "PUT", { name, date: $("#details-date").value }); }
-  catch (err) { $("#details-status").textContent = err.message; return; }
+  const pick = $("#details-visitor").value, current = visitorTeam();
+  let note = "Saved";
+  try {
+    await api("/api/event/details", "PUT", { name, date: $("#details-date").value });
+    if (pick && pick !== "__manage" && (!current || current.id !== pick)) {
+      const { visitor, cards } = await api("/api/event/visitor", "PUT", { team: pick });
+      note = `Saved · ${visitor.name} ${cards === 1 ? "is on 1 card" : `is on ${cards} cards`}`;
+    }
+  } catch (err) { $("#details-status").textContent = err.message; return; }
   $("#details").close();
-  await loadEvent(true);
-  flash("Saved");
+  state.stamp = Date.now();
+  await loadEvent(note === "Saved"); // a new visitor changed slides' text: reload the open slide too, not just the strip
+  flash(note);
 }
 $("#details-save").addEventListener("click", saveDetails);
 ["#details-name", "#details-date"].forEach((sel) => $(sel).addEventListener("keydown", (e) => {

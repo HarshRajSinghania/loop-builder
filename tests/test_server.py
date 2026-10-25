@@ -362,3 +362,35 @@ def test_the_editor_can_ask_before_an_export_replaces_files(client, tmp_path):
     while api.get(f"/api/jobs/{job['id']}").json()["state"] == "running":
         time.sleep(0.02)
     assert not stale.exists() and sorted(p.name for p in out.glob("*.png")) == sorted(pngs)
+
+
+def test_a_visiting_team_goes_on_the_cards_that_wait_for_it(tmp_path):
+    from PIL import Image  # pylint: disable=import-outside-toplevel
+
+    lib = Library(tmp_path / "Loop Builder")
+    for name, colour in (("Hastings", "purple"), ("Lakeville", "green")):
+        Image.new("RGB", (40, 40), colour).save(tmp_path / f"{name}.png")
+        lib.add_team(name, tmp_path / f"{name}.png", trim=False)
+    api = TestClient(create_app(library=lib))
+
+    def cards(event):
+        found = [s["raw"]["card"] for lp in event["loops"] for s in lp["slides"] if s["type"] == "card"]
+        return [(c["lines"][1]["text"], c.get("picture", "")) for c in found if len(c["lines"]) > 1]
+
+    slug = api.post("/api/events", json={"name": "Dual", "starter": "dual-meet", "visitor": "hastings"}).json()["slug"]
+    api.post(f"/api/events/{slug}/open")
+    event = api.get("/api/event").json()
+    assert ("Hastings", "assets/teams/hastings.png") in cards(event)  # both VISITING TEAM cards, with their logo
+    assert "VISITING TEAM" not in str(cards(event)) and event["visitor"]["name"] == "Hastings"
+    assert not [i for i in api.get("/api/checks").json() if i["level"] == "error"]
+
+    welcome = event["loops"][0]["slides"][0]["raw"]
+    welcome["card"]["lines"].append({"text": "Go Hastings!"})  # typed by hand: a new visitor leaves it alone
+    api.put("/api/slide", json={"loop": 0, "n": 0, "slide": welcome})
+    res = api.put("/api/event/visitor", json={"team": "lakeville"}).json()
+    assert res["cards"] == 2 and res["visitor"]["name"] == "Lakeville"
+    event = api.get("/api/event").json()
+    assert cards(event).count(("Lakeville", "assets/teams/lakeville.png")) == 2
+    assert event["loops"][0]["slides"][0]["raw"]["card"]["lines"][-1]["text"] == "Go Hastings!"
+    api.post("/api/undo")
+    assert api.get("/api/event").json()["visitor"]["name"] == "Hastings"

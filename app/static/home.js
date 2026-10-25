@@ -25,6 +25,12 @@ async function load() {
       el("a", { href: home.update.url, target: "_blank", rel: "noopener" }, "Download it"));
   }
   $("#folder").textContent = `Events are saved on this computer in ${home.folder}.`;
+  // A dual meet's visitor, from the teams saved in Teams: their name and logo go on the starter's cards.
+  const visitors = (await api("/api/teams").catch(() => [])).filter((t) => !t.home);
+  const keep = $("#new-visitor").value;
+  $("#new-visitor").replaceChildren(el("option", { value: "" }, "— choose later —"),
+    ...visitors.map((t) => el("option", { value: t.id, selected: t.id === keep }, t.name)));
+  $("#visitor-field").hidden = !visitors.length;
   $("#starters").replaceChildren(...home.starters.map((s) => el("button", { class: "starter", type: "button",
     on: { click: () => create(s.id) } }, s.title, el("small", {}, s.about))));
   renderEvents();
@@ -56,7 +62,8 @@ async function create(starter) {
   const name = $("#new-name").value.trim();
   if (!name) { $("#new-name").focus(); status("Give the event a name first."); return; }
   try {
-    const { slug } = await api("/api/events", "POST", { name, date: $("#new-date").value || today(), starter });
+    const visitor = $("#new-visitor").value || null;
+    const { slug } = await api("/api/events", "POST", { name, date: $("#new-date").value || today(), starter, visitor });
     openEvent(slug);
   } catch (err) { status(`Not created: ${err.message}`); }
 }

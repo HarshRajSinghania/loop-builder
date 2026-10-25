@@ -32,7 +32,7 @@ from loopgen.loops import build_clips, loop_length, render_slide
 from loopgen.slides import MissingAsset, Renderer
 from loopgen.uploads import UploadError, prepare_upload
 
-from app.library import LOOK_COLOURS, STARTERS, Library, LibraryError
+from app.library import LOOK_COLOURS, STARTERS, Library, LibraryError, apply_visitor
 from app.updates import check_for_update
 from app.version import COPYRIGHT, PROJECT_URL, RELEASES_URL, VERSION
 
@@ -197,6 +197,13 @@ class NewEventBody(BaseModel):
     name: str
     date: str | None = None
     starter: str = "dual-meet"
+    visitor: str | None = None  # a team's id: the visiting team, put on the starter's cards
+
+
+class TeamPick(BaseModel):
+    """A team from Teams, by id."""
+
+    team: str
 
 
 class DetailsBody(BaseModel):
@@ -438,7 +445,10 @@ def create_app(event_path=None, templates=None, library=None):
 
     @app.post("/api/events")
     def new_event(body: NewEventBody):
-        return {"slug": library_call(lib.create, body.name, body.starter, body.date)}
+        slug = library_call(lib.create, body.name, body.starter, body.date)
+        if body.visitor:
+            library_call(lib.set_visitor, slug, body.visitor)
+        return {"slug": slug}
 
     @app.post("/api/events/{slug}/duplicate")
     def duplicate_event(slug: str, body: NewEventBody):
@@ -565,6 +575,7 @@ def create_app(event_path=None, templates=None, library=None):
             "can_redo": bool(s.redo_stack),
             "slug": s.path.parent.name,
             "name": s.event.name,
+            "visitor": s.data.get("visitor"),
             "date": s.event.date,
             "width": s.event.width,
             "height": s.event.height,
@@ -671,6 +682,16 @@ def create_app(event_path=None, templates=None, library=None):
     def redo():
         with s.lock:
             return {"changed": s.step(False)}
+
+    @app.put("/api/event/visitor")
+    def set_visitor(body: TeamPick):
+        """Make a team the open event's visiting team: its name and logo go on the cards that say VISITING TEAM or
+        the previous visitor's name (apply_visitor). Undoable like any edit."""
+        visitor = library_call(lib.use_team, body.team, s.path.parent)
+        changed = []
+        with s.lock:
+            s.change(lambda d: changed.append(apply_visitor(d, visitor)))
+        return {"visitor": visitor, "cards": changed[0]}
 
     @app.put("/api/event/details")
     def save_details(body: DetailsBody):
