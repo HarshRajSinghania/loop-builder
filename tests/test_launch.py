@@ -45,3 +45,41 @@ def test_show_folder_opens_only_a_folder_that_exists(tmp_path, monkeypatch):
     dialogs = launcher.NativeDialogs()
     assert dialogs.show_folder(str(tmp_path)) and opened == [str(tmp_path)]
     assert not dialogs.show_folder(str(tmp_path / "missing")) and not dialogs.show_folder("") and len(opened) == 1
+
+
+def test_app_help_lists_developer_options_and_names_the_program(capsys):
+    import app.__main__ as launcher  # pylint: disable=import-outside-toplevel
+
+    import sys
+
+    old = sys.argv
+    sys.argv = ["python -m app", "--help"]
+    try:
+        try:
+            launcher.main()
+        except SystemExit:
+            pass
+    finally:
+        sys.argv = old
+    out = capsys.readouterr().out
+    assert "usage: python -m app" in out
+    assert "--browser" in out and "--no-open" in out and "--port" in out
+    assert "developer options" in out
+
+
+def test_loopgen_help_names_the_program(capsys):
+    import loopgen.__main__ as lg  # pylint: disable=import-outside-toplevel
+
+    import sys
+
+    old = sys.argv
+    sys.argv = ["python -m loopgen", "--help"]
+    try:
+        try:
+            lg.main()
+        except SystemExit:
+            pass
+    finally:
+        sys.argv = old
+    out = capsys.readouterr().out
+    assert "usage: python -m loopgen" in out
