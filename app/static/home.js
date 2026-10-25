@@ -95,6 +95,7 @@ async function savePackage(e) {
   }
 }
 
+$("#import-pick").addEventListener("click", () => $("#import-file").click()); // a button, so Tab reaches it
 $("#import-file").addEventListener("change", async (ev) => {
   const file = ev.target.files[0];
   ev.target.value = "";

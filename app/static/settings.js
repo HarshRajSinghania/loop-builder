@@ -16,7 +16,7 @@ document.body.insertAdjacentHTML("beforeend", `
       <legend class="label">Team theme</legend>
       <p class="muted">New events start with these colours and a copy of your logo. Each event can change its own from Theme… in the editor.</p>
       <div class="lbl">Team logo (PNG with transparency)
-        <span class="row"><span class="logo-box"><img id="logo" alt="Team logo" hidden></span><label class="btn" for="logo-file">Choose a picture…</label><input type="file" id="logo-file" accept="image/png,image/webp,image/jpeg" hidden></span></div>
+        <span class="row"><span class="logo-box"><img id="logo" alt="Team logo" hidden></span><button class="btn" type="button" id="logo-pick">Choose a picture…</button><input type="file" id="logo-file" accept="image/png,image/webp,image/jpeg" hidden></span></div>
       <div class="look-row"><div class="grid" id="team-colours"></div><img id="look-preview" class="look-preview" alt="A sample welcome card in the team theme"></div>
     </fieldset>
     <p id="settings-status" class="warn" aria-live="polite"></p>
@@ -90,6 +90,7 @@ function previewLook() {
     if (res.ok) $("#look-preview").src = URL.createObjectURL(await res.blob());
   }, 150);
 }
+$("#logo-pick").addEventListener("click", () => $("#logo-file").click()); // a button, so Tab reaches it
 $("#logo-file").addEventListener("change", async (ev) => {
   const file = ev.target.files[0];
   ev.target.value = "";

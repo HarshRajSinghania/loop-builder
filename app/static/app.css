@@ -100,7 +100,6 @@ select.field{padding-right:8px}
 .ev-main{display:flex;flex-direction:column;gap:8px;min-width:0}
 .ev-name{font-size:17px;font-weight:600;color:var(--text);text-decoration:none}.ev-name:hover{text-decoration:underline}
 .chip{font-size:12px;color:var(--soft);background:var(--ctl);border:1px solid var(--ctl-line);border-radius:999px;padding:4px 8px}
-label.btn{display:inline-flex;align-items:center}
 .logo-box{width:64px;height:64px;background:#000;border-radius:8px;display:inline-flex;align-items:center;justify-content:center}
 .logo-box img{max-width:56px;max-height:56px}
 .crumb a{color:var(--soft)}
