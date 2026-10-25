@@ -864,20 +864,23 @@ def create_app(event_path=None, templates=None, library=None):
             body.formats = ["wmv", *body.formats]  # the review MP4 is made alongside the WMV
         if not body.loops:
             raise HTTPException(422, "pick at least one loop to export")
-        with s.lock:
+        with s.lock:  # checked and registered together, so two clicks can't both start one
+            if any(job["state"] == "running" for job in jobs.values()):  # two at once would write the same files
+                raise HTTPException(409, "An export is still running. Wait for it to finish, then export again.")
             errors = [i for i in run_checks(s.event, [s.loop(i) for i in body.loops]) if i.level == "error"]
-        if errors:  # errors block an export; warnings don't
-            raise HTTPException(422, "Fix these first: " + "; ".join(str(e).removeprefix("error: ") for e in errors))
-        job = {
-            "id": uuid.uuid4().hex[:8],
-            "state": "running",
-            "done": [],
-            "error": None,
-            "total": len(body.loops),
-            "started": time.time(),
-        }
-        jobs[job["id"]] = job
-        with s.lock:
+            if errors:  # errors block an export; warnings don't
+                raise HTTPException(
+                    422, "Fix these first: " + "; ".join(str(e).removeprefix("error: ") for e in errors)
+                )
+            job = {
+                "id": uuid.uuid4().hex[:8],
+                "state": "running",
+                "done": [],
+                "error": None,
+                "total": len(body.loops),
+                "started": time.time(),
+            }
+            jobs[job["id"]] = job
             keep_version(s.path)
 
         def work():

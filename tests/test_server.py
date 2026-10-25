@@ -1,6 +1,8 @@
 """The editor's local API: loop edits save, and an edit that breaks the event changes nothing."""
 
 import shutil
+import threading
+import time
 from urllib.parse import unquote
 from pathlib import Path
 
@@ -165,6 +167,25 @@ def test_export_is_refused_while_a_loop_has_errors(client, tmp_path):
     res = api.post("/api/export", json={"loops": [2], "out_dir": str(tmp_path / "out")})
     assert res.status_code == 422 and "full web address" in res.json()["detail"]
     assert not (tmp_path / "out").exists()
+
+
+def test_a_second_export_waits_for_the_first(client, tmp_path, monkeypatch):
+    api, _ = client
+    release = threading.Event()
+
+    def slow_export(*_args):
+        release.wait(10)  # the first export is still writing its files
+        return []
+
+    monkeypatch.setattr("app.server.export_loop", slow_export)
+    body = {"loops": [2], "out_dir": str(tmp_path / "out"), "formats": ["wmv"]}
+    first = api.post("/api/export", json=body).json()
+    second = api.post("/api/export", json=body)
+    assert second.status_code == 409 and "still running" in second.json()["detail"]
+    release.set()
+    while api.get(f"/api/jobs/{first['id']}").json()["state"] == "running":
+        time.sleep(0.02)
+    assert api.post("/api/export", json=body).status_code == 200  # free again once it's done
 
 
 def test_qr_links_keep_their_case_and_bare_domains_pass(client):

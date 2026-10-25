@@ -941,13 +941,17 @@ $("#run-export").addEventListener("click", async () => {
   const formats = [$("#fmt-wmv").checked && "wmv", $("#fmt-png").checked && "png"].filter(Boolean);
   if (!formats.length && !$("#mp4").checked) { $("#export-status").textContent = "Pick at least one thing to make."; return; }
   let job;
-  try { job = await api("/api/export", "POST", { loops, out_dir: outDir, formats, preview_mp4: $("#mp4").checked }); }
-  catch (err) { $("#export-status").textContent = err.message; return; }
-  while (job.state === "running") {
-    $("#export-status").textContent = `Rendering ${job.current || "…"} (${job.done.length} of ${job.total} done)`;
-    await new Promise((r) => setTimeout(r, 500));
-    job = await api(`/api/jobs/${job.id}`);
-  }
+  const run = $("#run-export");
+  run.disabled = true; // one export at a time: a second would write the same files
+  try {
+    try { job = await api("/api/export", "POST", { loops, out_dir: outDir, formats, preview_mp4: $("#mp4").checked }); }
+    catch (err) { $("#export-status").textContent = err.message; return; }
+    while (job.state === "running") {
+      $("#export-status").textContent = `Rendering ${job.current || "…"} (${job.done.length} of ${job.total} done)`;
+      await new Promise((r) => setTimeout(r, 500));
+      job = await api(`/api/jobs/${job.id}`);
+    }
+  } finally { run.disabled = false; }
   job.done.forEach((d) => {
     const i = state.event.loops.findIndex((lp) => lp.name === d.loop);
     const skipped = d.skipped && d.skipped.length ? ` · no PNG for slide ${d.skipped.map((x) => x.slide).join(", ")} (moves; in the WMV)` : "";
