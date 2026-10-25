@@ -21,7 +21,7 @@ document.body.insertAdjacentHTML("beforeend", `
     </fieldset>
     <p id="settings-status" class="warn" aria-live="polite"></p>
     <p class="row"><span id="version" class="muted"></span><button class="btn" type="button" id="open-about">About Loop Builder…</button></p>
-    <div class="row end"><button class="btn" value="close">Close</button><button class="btn btn-primary" type="button" id="settings-save">Save</button></div>
+    <div class="row end"><span class="muted grow">Changes are saved when you close Settings.</span><button class="btn btn-primary" value="close">Done</button></div>
   </form>
 </dialog>
 <dialog id="about">
@@ -44,7 +44,8 @@ document.body.insertAdjacentHTML("beforeend", `
 let settingsHome = null; // /api/home when the dialog opened
 let settingsSaved = null;
 const showLogo = () => { const img = $("#logo"); img.hidden = !settingsHome.settings.logo; if (settingsHome.settings.logo) img.src = `/api/team/logo?t=${Date.now()}`; };
-// Open Settings; `onSaved` runs after a save (and after a new team logo, which is kept straight away).
+// Open Settings; `onSaved` runs after changes are saved: when it closes (Done, Esc), and straight away for a new
+// team logo.
 async function openSettings(onSaved) {
   settingsHome = await api("/api/home");
   settingsSaved = onSaved;
@@ -99,12 +100,25 @@ $("#logo-file").addEventListener("change", async (ev) => {
   catch (err) { $("#settings-status").textContent = err.message; return; }
   if (settingsSaved) await settingsSaved(); // the logo is kept straight away, so the page behind catches up now
 });
-$("#settings-save").addEventListener("click", async () => {
-  try {
-    await api("/api/settings", "PUT", { team: $("#set-team").value.trim(), templates: $("#set-templates").value.trim(),
-      export_dir: $("#set-export").value.trim(), pool_lanes: Number($("#set-lanes").value), first_lane: Number($("#set-first").value),
-      theme: teamLook() });
-    $("#settings").close();
-    if (settingsSaved) await settingsSaved();
-  } catch (err) { $("#settings-status").textContent = err.message; }
+// Closing saves what changed, however it closes, like the logo (kept as soon as it's picked). Only changed
+// settings are sent, so a template folder that's missing on this computer doesn't block a new team name.
+$("#settings").addEventListener("close", async () => {
+  const s = settingsHome.settings, before = s.theme || DEFAULTS, look = teamLook();
+  const now = { team: $("#set-team").value.trim(), templates: $("#set-templates").value.trim(), export_dir: $("#set-export").value.trim(),
+    pool_lanes: Number($("#set-lanes").value), first_lane: Number($("#set-first").value) };
+  const changes = Object.fromEntries(Object.entries(now).filter(([k, v]) => v !== (s[k] ?? (k === "pool_lanes" ? 8 : k === "first_lane" ? 1 : ""))));
+  if (Object.entries(look).some(([k, v]) => v !== (before[k] || DEFAULTS[k]).toUpperCase())) changes.theme = look;
+  if (!Object.keys(changes).length) return;
+  let problem = null;
+  try { await api("/api/settings", "PUT", changes); }
+  catch (err) { // a folder that isn't there: keep the rest, put the folder back and say why, so closing again works
+    problem = `${err.message}. The template folder wasn't changed.`;
+    delete changes.templates;
+    $("#set-templates").value = s.templates || "";
+    try { if (Object.keys(changes).length) await api("/api/settings", "PUT", changes); }
+    catch (again) { problem = again.message; Object.keys(changes).forEach((k) => delete changes[k]); }
+  }
+  Object.assign(s, changes);
+  if (Object.keys(changes).length && settingsSaved) await settingsSaved();
+  if (problem) { $("#settings-status").textContent = problem; $("#settings").showModal(); }
 });

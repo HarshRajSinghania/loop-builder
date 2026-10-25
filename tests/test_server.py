@@ -300,3 +300,31 @@ def test_a_duplicate_can_be_renamed_and_any_event_deleted(tmp_path):
     assert api.get("/api/event").status_code == 409
     assert api.delete(f"/api/events/{first}").status_code == 422  # already gone
     assert api.delete("/api/events/..").status_code in (404, 422) and lib.events_dir.exists()
+
+
+def test_the_home_team_name_and_logo_in_lanes_follow_use_team_theme(client):
+    api, path = client
+    logos = sorted((path.parent / "assets").glob("*.png"))
+    with logos[0].open("rb") as fh:
+        api.post("/api/settings/logo", files={"file": ("team.png", fh)})
+    api.put("/api/settings", json={"team": "Riverside Otters"})
+    api.post("/api/theme/reset")
+    home = api.post("/api/teams/_home/use").json()
+    body = loop_body(api.get("/api/event").json(), 0)
+    lanes = [{"name": "RIVERSIDE|OTTERS", "logo": home["logo"]}, {}]
+    body["slides"].append({"lanes": {"title": "Lanes", "lanes": lanes}})
+    api.put("/api/loops/0", json=body)
+    event = api.get("/api/event").json()
+    assert event["team_look"]  # the lane shows the team's name, with a line break of its own
+    api.put("/api/settings", json={"team": "Riverside Swim Club"})
+    event = api.get("/api/event").json()
+    assert not event["team_look"] and event["offer_team_theme"]  # a new name is offered, like a new logo
+    api.post("/api/theme/keep")
+    assert not api.get("/api/event").json()["offer_team_theme"]
+    with logos[1].open("rb") as fh:
+        api.post("/api/settings/logo", files={"file": ("team.png", fh)})
+    assert api.get("/api/event").json()["offer_team_theme"]
+    api.post("/api/theme/reset")
+    event = api.get("/api/event").json()
+    lane = event["loops"][0]["slides"][-1]["raw"]["lanes"]["lanes"][0]
+    assert event["team_look"] and lane["name"] == "Riverside Swim Club"  # team_look: the lane has the new logo too
