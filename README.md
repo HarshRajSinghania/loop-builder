@@ -60,7 +60,7 @@ For working on the editor itself, `--browser` opens it in a browser tab instead,
   Loop Builder on a Mac (so macOS doesn't ask to open Documents; 0.1.6 and earlier used Documents there too, and the
   events page offers to bring those over). Exports default to Movies › Loop Builder on a Mac. Set `LOOPBUILDER_HOME`
   to use another folder, as the tests do.
-- Tests: `.venv/bin/python -m pytest`. Lint: `.venv/bin/pylint loopgen app tests`. Format: `black -l 120`.
+- Tests: `.venv/bin/python -m pytest`. Lint: `.venv/bin/pylint loopgen app tests packaging/*.py`. Format: `.venv/bin/black loopgen app tests packaging` (120 columns, set in `pyproject.toml`). CI checks both, so keep them clean.
 - Pictures added to an event are kept as working copies at most 2048 px on the long side, so previews stay fast.
 
 ## Help and feedback

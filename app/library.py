@@ -22,7 +22,7 @@ from pathlib import Path
 import yaml
 from PIL import Image
 
-from loopgen.event import DEFAULT_THEME
+from loopgen.event import DEFAULT_THEME, EventError, parse_event, read_event_file
 from loopgen.uploads import prepare_logo, prepare_picture
 
 LOOK_COLOURS = ("primary", "accent", "text", "muted", "background")  # the colours a look sets
@@ -169,6 +169,15 @@ def default_root():
     return documents_root()
 
 
+def old_mac_folder(root):
+    """Documents › Loop Builder, where 0.1.6 and earlier kept a Mac's events, when `root` is the Mac's own Loop
+    Builder folder and so may have them to bring over; else None. Never with LOOPBUILDER_HOME: a test or second
+    folder must not pull someone's real events out of Documents."""
+    if sys.platform == "darwin" and not os.environ.get("LOOPBUILDER_HOME") and Path(root) == default_root():
+        return documents_root()
+    return None
+
+
 def default_exports(root):
     """Where exports go until a folder is picked: somewhere easy to find in Finder or Explorer. On a Mac that's
     Movies › Loop Builder (macOS doesn't ask about Movies), elsewhere an Exports folder in the Loop Builder folder."""
@@ -228,26 +237,65 @@ class Library:  # pylint: disable=too-many-public-methods  # the one way in to t
 
     def move_from(self, old):
         """Move an older Loop Builder folder's events, team logos and settings into this one. Events keep their
-        names, told apart like duplicates if one is already here; settings and the team logo come over only if
-        this folder has none yet. What's left of the old folder (its log, say) stays. Returns events moved."""
+        names, "<name> (2)" if one here has it already; saved teams join the ones here; settings and the team logo
+        come over only if this folder has none yet. What's left of the old folder (its log, say) stays. Returns
+        events moved."""
         old = Path(old)
         if not (old / "Events").is_dir() or old.resolve() == self.root.resolve():
             raise LibraryError(f"no Loop Builder folder at {old}")
         moved = 0
         for folder in sorted(p for p in (old / "Events").iterdir() if p.is_dir() and (p / "event.yaml").exists()):
-            shutil.move(str(folder), str(self._free_folder(folder.name)))
+            self._move_event(folder)
             moved += 1
         if not self.settings_path.exists() and (old / "settings.json").exists():
             shutil.move(str(old / "settings.json"), str(self.settings_path))
         if (old / "Team").is_dir():
             for item in (old / "Team").iterdir():
-                if not (self.team_dir / item.name).exists():
+                if item.name == "Teams" and item.is_dir():
+                    self._move_teams(item)
+                elif not (self.team_dir / item.name).exists():
                     shutil.move(str(item), str(self.team_dir / item.name))
         for empty in (old / "Events", old / "Team"):
             if empty.is_dir() and not any(empty.iterdir()):
                 empty.rmdir()
         self.update_settings(documents_checked=True)
         return moved
+
+    def _move_event(self, folder):
+        """Move one event folder in, named "<name> (2)" when an event here already has its name, as imports are."""
+        try:
+            data = read_event_file(folder / "event.yaml")
+        except EventError:  # unreadable: moved as it is, for the person to deal with here
+            shutil.move(str(folder), str(self._free_folder(folder.name)))
+            return
+        name = str(data.get("event") or folder.name)
+        new, dest = self._free_name(name)
+        shutil.move(str(folder), str(dest))
+        if new != name:
+            data["event"] = new
+            (dest / "event.yaml").write_text(
+                yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding="utf-8"
+            )
+
+    def _move_teams(self, old_teams):
+        """Add an older folder's saved teams to the ones here: a team already here by name stays as it is, and a
+        team whose id is taken gets a free one. Teams not brought over stay where they were."""
+        try:
+            theirs = json.loads((old_teams / "teams.json").read_text(encoding="utf-8"))
+        except (FileNotFoundError, json.JSONDecodeError):
+            return
+        mine = [t for t in self.teams() if not t.get("home")]
+        for team in theirs:
+            logo = old_teams / str(team.get("logo", ""))
+            if not logo.is_file() or any(t["name"].lower() == str(team.get("name", "")).lower() for t in mine):
+                continue
+            team_id, n = team["id"], 2
+            while any(t["id"] == team_id for t in mine) or (self.teams_dir / f"{team_id}{logo.suffix}").exists():
+                team_id, n = f"{team['id']}-{n}", n + 1
+            self.teams_dir.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(logo), str(self.teams_dir / f"{team_id}{logo.suffix}"))
+            mine.append({**team, "id": team_id, "logo": f"{team_id}{logo.suffix}"})
+        self._save_teams(sorted(mine, key=lambda t: t["name"]))
 
     # --- settings ---
 
@@ -262,7 +310,10 @@ class Library:  # pylint: disable=too-many-public-methods  # the one way in to t
             saved = {}
         return {**DEFAULT_SETTINGS, **saved}
 
+    FOLDERS = ("templates", "export_dir")  # kept with ~ written out, so every reader finds the same folder
+
     def update_settings(self, **changes):
+        changes = {k: str(Path(v).expanduser()) if k in self.FOLDERS and v else v for k, v in changes.items()}
         settings = {**self.settings(), **{k: v for k, v in changes.items() if k in DEFAULT_SETTINGS}}
         self.settings_path.write_text(json.dumps(settings, indent=2), encoding="utf-8")
         return settings
@@ -417,8 +468,8 @@ class Library:  # pylint: disable=too-many-public-methods  # the one way in to t
     def set_visitor(self, slug, team_id):
         """Make a team the visiting team of an event that isn't open (see apply_visitor); returns cards changed."""
         path = self.event_file(slug)
+        data = self._read(path)
         visitor = self.use_team(team_id, path.parent)
-        data = yaml.safe_load(path.read_text(encoding="utf-8"))
         changed = apply_visitor(data, visitor)
         path.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding="utf-8")
         return changed
@@ -435,8 +486,8 @@ class Library:  # pylint: disable=too-many-public-methods  # the one way in to t
         found = []
         for path in self.events_dir.glob("*/event.yaml"):
             try:
-                data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-            except yaml.YAMLError:
+                data = read_event_file(path)
+            except EventError:  # a hand-edited or half-synced file: left out, so the other events still show
                 continue
             found.append(
                 {
@@ -451,6 +502,16 @@ class Library:  # pylint: disable=too-many-public-methods  # the one way in to t
                 }
             )
         return sorted(found, key=lambda e: e["edited"], reverse=True)
+
+    def _free_name(self, name):
+        """A name no event here has, and a free folder for it: "<name> (2)" when an event is called that or has that
+        folder. Both count: a renamed event keeps the folder of its first name."""
+        taken = {str(e["name"]).casefold() for e in self.events()}
+        base, n = _slug(name), 2
+        new, folder = name, self.events_dir / base
+        while folder.exists() or new.casefold() in taken:
+            new, folder, n = f"{name} ({n})", self.events_dir / f"{base} ({n})", n + 1
+        return new, folder
 
     def _free_folder(self, name):
         base = _slug(name)
@@ -513,13 +574,21 @@ class Library:  # pylint: disable=too-many-public-methods  # the one way in to t
 
     def duplicate(self, slug, name, when=None):
         source = self.event_file(slug).parent
+        data = self._read(source / "event.yaml")  # before copying, so a bad file leaves no half-made copy
         folder = self._free_folder(name)
         shutil.copytree(source, folder)
         path = folder / "event.yaml"
-        data = yaml.safe_load(path.read_text(encoding="utf-8"))
         data["event"], data["date"] = name, str(when or date.today())
         path.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding="utf-8")
         return folder.name
+
+    @staticmethod
+    def _read(path):
+        """An event file's data, or LibraryError (a 422 in the app) if it isn't readable as an event."""
+        try:
+            return read_event_file(path)
+        except EventError as exc:
+            raise LibraryError(str(exc)) from exc
 
     def delete(self, slug):
         """Remove an event's folder: its file, its pictures and its kept versions."""
@@ -549,13 +618,15 @@ class Library:  # pylint: disable=too-many-public-methods  # the one way in to t
             for n in names:
                 if n.startswith("/") or ".." in Path(n).parts or ":" in n:
                     raise LibraryError(f"unsafe path in package: {n}")
-            data = yaml.safe_load(z.read("event.yaml")) or {}
+            try:
+                data = parse_event(z.read("event.yaml").decode("utf-8", "replace"), "its event.yaml")
+            except EventError as exc:  # checked before anything is unpacked, so a bad file imports nothing
+                raise LibraryError(f"this isn't a Loop Builder event: {exc}") from exc
             name = str(data.get("event") or Path(package).stem)
-            folder = self._free_folder(name)
+            new, folder = self._free_name(name)
             z.extractall(folder)
-        clash = folder.name[len(_slug(name)) :]  # " (2)" when an event of that name is already here
-        if clash:  # so the home screen tells the two apart, as its folder does
+        if new != name:  # "<name> (2)", so the home screen tells the two apart
             path = folder / "event.yaml"
-            data["event"] = name + clash
+            data["event"] = new
             path.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding="utf-8")
         return folder.name

@@ -15,6 +15,8 @@ PLACEHOLDERS = ("VISITING TEAM", "TEAM NAME")
 
 @dataclass(frozen=True)
 class Issue:
+    """A problem the checks found: an error blocks an export, a warning doesn't."""
+
     level: str  # "error" or "warning"
     loop: str
     slide: int  # 1-based, 0 for the whole loop

@@ -1,11 +1,16 @@
 """The Loop Builder folder: starters, duplicates, settings and .loopevent packages."""
 
 import zipfile
+from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
 
 from app.library import STARTERS, Library, LibraryError
+from app.server import create_app
 from loopgen import load_event, render_slide, run_checks
+from loopgen.__main__ import main as cli
+from loopgen.event import EventError
 
 
 @pytest.fixture(name="lib")
@@ -179,3 +184,120 @@ def test_move_from_brings_an_older_folder_over(tmp_path):
     assert not (old.root / "Events").exists() and (old.root / "loop-builder.log").exists()  # the rest stays
     with pytest.raises(LibraryError):
         new.move_from(old.root)  # nothing left to bring over
+
+
+def test_importing_a_renamed_events_package_tells_the_copy_apart(lib, tmp_path):
+    """A renamed event keeps its first folder: checking folder names alone, the first import shared its name."""
+    slug = lib.create("Round 4", "blank")
+    path = lib.event_file(slug)
+    path.write_text(
+        path.read_text(encoding="utf-8").replace("event: Round 4", "event: Round 4 renamed"), encoding="utf-8"
+    )
+    package = lib.export_package(slug, tmp_path / "Round 4 renamed")
+    names = [load_event(lib.event_file(lib.import_package(package))).name for _ in range(2)]
+    assert names == ["Round 4 renamed (2)", "Round 4 renamed (3)"]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "- just\n- a list\n",
+        "event: Bad\nloops: [1, 2]\n",
+        "event: Bad\nloops: [\n",
+        "event: Bad\nloops:\n  - name: a\n    slides: 3\n",
+    ],
+)
+def test_a_malformed_event_file_is_left_out_and_explained(lib, text):
+    """A hand-edited or half-synced file used to take the whole events home down (500) with it."""
+    lib.create("Good", "blank")
+    (lib.events_dir / "Bad").mkdir()
+    (lib.events_dir / "Bad" / "event.yaml").write_text(text, encoding="utf-8")
+    assert [e["name"] for e in lib.events()] == ["Good"]
+    api = TestClient(create_app(library=lib), base_url="http://127.0.0.1")  # the app answers only its own host
+    assert api.get("/api/home").status_code == 200
+    res = api.post("/api/events/Bad/open")
+    assert res.status_code == 422 and "Bad" in res.json()["detail"]  # an EventError naming the file, not a 500
+
+
+def test_a_slide_whose_settings_are_a_list_says_so(tmp_path):
+    path = tmp_path / "bad.yaml"
+    path.write_text("event: x\nloops:\n  - name: a\n    slides:\n      - card: [1, 2]\n", encoding="utf-8")
+    with pytest.raises(EventError, match="loop 1 \\(a\\), slide 1: a card's settings"):
+        load_event(path)
+
+
+def test_the_command_line_reports_a_malformed_file_without_a_traceback(tmp_path, monkeypatch, capsys):
+    path = tmp_path / "bad.yaml"
+    path.write_text("event: x\nloops: [\n", encoding="utf-8")
+    monkeypatch.setattr("sys.argv", ["loopgen", str(path), "--check"])
+    assert cli() == 1
+    err = capsys.readouterr().err
+    assert err.startswith("error: ") and "(line 3)" in err and "Traceback" not in err
+
+
+@pytest.mark.parametrize("text", ["- just\n- a list\n", "event: Bad\nloops: [1]\n"])
+def test_a_malformed_package_or_event_is_refused_not_half_made(lib, tmp_path, text):
+    package = tmp_path / "bad.loopevent"
+    with zipfile.ZipFile(package, "w") as z:
+        z.writestr("event.yaml", text)
+    with pytest.raises(LibraryError, match="isn.t a Loop Builder event"):
+        lib.import_package(package)
+    assert not list(lib.events_dir.iterdir())  # nothing unpacked
+    (lib.events_dir / "Bad").mkdir()
+    (lib.events_dir / "Bad" / "event.yaml").write_text(text, encoding="utf-8")
+    with pytest.raises(LibraryError):
+        lib.duplicate("Bad", "Copy")
+    assert [p.name for p in lib.events_dir.iterdir()] == ["Bad"]  # no half-made copy
+
+
+def test_template_panels_need_a_panel_each(tmp_path):
+    path = tmp_path / "panels.yaml"
+    path.write_text("event: x\ntemplate_panels: {Welcome.tpl: 1}\nloops: []\n", encoding="utf-8")
+    with pytest.raises(EventError, match="template_panels: Welcome.tpl needs a 'panel'"):
+        load_event(path)
+
+
+def test_the_command_line_refuses_slide_zero(monkeypatch, capsys):
+    event = Path(__file__).resolve().parent.parent / "examples" / "dual-meet" / "event.yaml"
+    monkeypatch.setattr("sys.argv", ["loopgen", str(event), "--slide-png", "Raffle", "0", "out.png"])
+    with pytest.raises(SystemExit):
+        cli()
+    assert "whole number from 1" in capsys.readouterr().err
+
+
+def test_only_the_macs_own_folder_offers_the_documents_one(tmp_path, monkeypatch):
+    from app import library  # pylint: disable=import-outside-toplevel
+
+    monkeypatch.delenv("LOOPBUILDER_HOME", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    monkeypatch.setattr(library.sys, "platform", "darwin")
+    assert library.old_mac_folder(library.default_root()) == tmp_path / "Documents" / "Loop Builder"
+    assert library.old_mac_folder(tmp_path / "elsewhere") is None
+    monkeypatch.setenv("LOOPBUILDER_HOME", str(tmp_path / "elsewhere"))  # a tester's throwaway folder
+    assert library.old_mac_folder(library.default_root()) is None
+    monkeypatch.delenv("LOOPBUILDER_HOME")
+    monkeypatch.setattr(library.sys, "platform", "win32")  # Windows keeps Documents: nothing to bring over
+    assert library.old_mac_folder(library.default_root()) is None
+
+
+def test_move_from_adds_saved_teams_and_tells_events_apart(tmp_path):
+    old = Library(tmp_path / "Documents")
+    old.create("Meet", "blank")
+    old.teams_dir.mkdir(parents=True)
+    (old.teams_dir / "teams.json").write_text(
+        '[{"id": "lakeview", "name": "Lakeview", "logo": "lakeview.png"},'
+        ' {"id": "riverside", "name": "Riverside", "logo": "riverside.png"}]',
+        encoding="utf-8",
+    )
+    for team in ("lakeview", "riverside"):
+        (old.teams_dir / f"{team}.png").write_bytes(b"png")
+    new = Library(tmp_path / "Application Support")
+    new.create("Meet", "blank")
+    new.teams_dir.mkdir(parents=True)  # a team added before bringing the old folder over
+    (new.teams_dir / "teams.json").write_text('[{"id": "lakeview", "name": "Lakeview Otters", "logo": "lakeview.png"}]')
+    (new.teams_dir / "lakeview.png").write_bytes(b"new")
+    new.move_from(old.root)
+    assert sorted(t["name"] for t in new.teams()) == ["Lakeview", "Lakeview Otters", "Riverside"]
+    assert (new.teams_dir / "lakeview.png").read_bytes() == b"new"  # the one here is untouched
+    assert sorted(e["name"] for e in new.events()) == ["Meet", "Meet (2)"]

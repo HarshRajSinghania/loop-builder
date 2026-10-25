@@ -1,6 +1,7 @@
 """The editor's local API: loop edits save, and an edit that breaks the event changes nothing."""
 
 import shutil
+import tempfile
 import threading
 import time
 from urllib.parse import unquote
@@ -8,8 +9,9 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from PIL import Image
 
-from app.library import Library
+from app.library import Library, default_exports
 from app.server import create_app
 
 EXAMPLE = Path(__file__).resolve().parent.parent / "examples" / "dual-meet"
@@ -177,7 +179,7 @@ def test_a_second_export_waits_for_the_first(client, tmp_path, monkeypatch):
         release.wait(10)  # the first export is still writing its files
         return []
 
-    monkeypatch.setattr("app.server.export_loop", slow_export)
+    monkeypatch.setattr("app.api.export.export_loop", slow_export)  # where export looks it up
     body = {"loops": [2], "out_dir": str(tmp_path / "out"), "formats": ["wmv"]}
     first = api.post("/api/export", json=body).json()
     second = api.post("/api/export", json=body)
@@ -365,7 +367,6 @@ def test_the_editor_can_ask_before_an_export_replaces_files(client, tmp_path):
 
 
 def test_a_visiting_team_goes_on_the_cards_that_wait_for_it(tmp_path):
-    from PIL import Image  # pylint: disable=import-outside-toplevel
 
     lib = Library(tmp_path / "Loop Builder")
     for name, colour in (("Hastings", "purple"), ("Lakeville", "green")):
@@ -396,8 +397,21 @@ def test_a_visiting_team_goes_on_the_cards_that_wait_for_it(tmp_path):
     assert api.get("/api/event").json()["visitor"]["name"] == "Hastings"
 
 
+def test_a_second_picture_of_the_same_name_keeps_the_first(client, tmp_path):
+    api, path = client
+    files = []
+    for colour in ("red", "blue", "blue"):  # two different poster.png files, then the second again
+        picture = tmp_path / colour / "poster.png"
+        picture.parent.mkdir(exist_ok=True)
+        Image.new("RGB", (40, 30), colour).save(picture)
+        with picture.open("rb") as fh:
+            files.append(api.post("/api/pictures", files={"file": ("poster.png", fh)}).json()["file"])
+    assert files[0] != files[1] and files[1] == files[2]
+    first = Image.open(path.parent / files[0]).convert("RGB").getpixel((0, 0))
+    assert first[0] > 200 and first[2] < 50  # still the red one
+
+
 def test_pictures_library_routes(client, tmp_path):
-    from PIL import Image  # pylint: disable=import-outside-toplevel
 
     api, path = client
     Image.new("RGBA", (64, 64), (255, 200, 0, 255)).save(tmp_path / "duck.png")
@@ -436,13 +450,10 @@ def test_settings_can_count_a_folders_templates_as_it_is_typed(client, tmp_path)
 
 
 def test_offer_and_bring_over_the_documents_folder(tmp_path, monkeypatch):
-    from app import server  # pylint: disable=import-outside-toplevel
-
     lib = Library(tmp_path / "Application Support" / "Loop Builder")
     old = Library(tmp_path / "Documents" / "Loop Builder")
     old.create("Sections", "sections")
-    monkeypatch.setattr(server, "default_root", lambda: lib.root)  # as on a Mac
-    monkeypatch.setattr(server, "documents_root", lambda: old.root)
+    monkeypatch.setattr("app.api.home.old_mac_folder", lambda root: old.root)  # as on a Mac
     api = TestClient(create_app(library=lib))
     assert api.get("/api/home").json()["offer_documents"]
     assert api.post("/api/library/move-documents").json() == {"moved": 1}
@@ -451,15 +462,68 @@ def test_offer_and_bring_over_the_documents_folder(tmp_path, monkeypatch):
 
 
 def test_no_documents_folder_or_no_thanks_stops_the_offer(tmp_path, monkeypatch):
-    from app import server  # pylint: disable=import-outside-toplevel
-
     lib = Library(tmp_path / "Application Support" / "Loop Builder")
-    monkeypatch.setattr(server, "default_root", lambda: lib.root)
-    monkeypatch.setattr(server, "documents_root", lambda: tmp_path / "Documents" / "Loop Builder")
+    monkeypatch.setattr("app.api.home.old_mac_folder", lambda root: tmp_path / "Documents" / "Loop Builder")
     api = TestClient(create_app(library=lib))
     assert api.post("/api/library/move-documents").status_code == 404
     assert not api.get("/api/home").json()["offer_documents"]
     lib.update_settings(documents_checked=False)
     assert api.post("/api/library/documents-checked").json() == {"ok": True}
     assert not api.get("/api/home").json()["offer_documents"]
-    assert api.get("/api/home").json()["exports"] == str(server.default_exports(lib.root))
+    assert api.get("/api/home").json()["exports"] == str(default_exports(lib.root))
+
+
+def test_a_template_folder_written_with_a_tilde_is_found_everywhere(client, tmp_path, monkeypatch):
+    api, _ = client
+    monkeypatch.setenv("HOME", str(tmp_path))  # ~ is tmp_path here: HOME on a Mac, USERPROFILE on Windows
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    (tmp_path / "Boards").mkdir()
+    (tmp_path / "Boards" / "Welcome.tpl").write_bytes(b"enough for the folder check")
+    assert api.put("/api/settings", json={"templates": "~/Boards"}).status_code == 200
+    home = api.get("/api/home").json()
+    assert home["settings"]["templates"] == str(tmp_path / "Boards")
+    assert home["templates_found"] and home["template_count"] == 1
+    assert api.get("/api/event").json()["templates_found"]
+
+
+def test_only_the_apps_own_pages_can_use_it(client):
+    """A website the user visits can't drive the app: not by DNS rebinding (its own name aimed at 127.0.0.1) and not
+    by posting a form at it. Requests from no page at all (scripts, these tests) still work."""
+    api, _ = client
+    assert api.get("/api/home", headers={"host": "evil.example.com"}).status_code == 403
+    assert api.get("/api/home", headers={"host": "localhost:8123"}).status_code == 200
+    same = {"host": "LOCALHOST:8765", "origin": "http://localhost:8765"}  # names are case-blind
+    assert api.put("/api/settings", json={"team": "Riverside"}, headers=same).status_code == 200
+    logo = {"file": ("logo.png", b"not even a picture")}
+    for headers in (
+        {"origin": "https://evil.example.com"},
+        {"origin": "null"},
+        {"referer": "https://evil.example.com/x"},
+    ):
+        assert api.post("/api/settings/logo", files=logo, headers=headers).status_code == 403
+    assert (
+        api.put("/api/settings", json={"team": "Riverside"}, headers={"origin": "http://127.0.0.1"}).status_code == 200
+    )
+    assert (
+        api.put("/api/settings", json={"team": "Riverside"}, headers={"referer": "http://127.0.0.1/edit"}).status_code
+        == 200
+    )
+
+
+def test_a_downloaded_package_leaves_no_temporary_folder(tmp_path, monkeypatch):
+    lib = Library(tmp_path / "Loop Builder")
+    slug = lib.create("Download", "blank")
+    made, mkdtemp = [], tempfile.mkdtemp
+    monkeypatch.setattr("app.api.home.tempfile.mkdtemp", lambda: made.append(Path(mkdtemp())) or str(made[-1]))
+    res = TestClient(create_app(library=lib)).get(f"/api/events/{slug}/package")
+    assert res.status_code == 200 and res.content[:2] == b"PK"  # the zip arrived
+    assert made and not made[0].exists()
+
+
+def test_the_documents_offer_never_shows_for_another_folder(tmp_path, monkeypatch):
+    """Only the Mac's own Loop Builder folder offers to bring Documents › Loop Builder over: with LOOPBUILDER_HOME
+    (as the tests and testers use) one click would move someone's real events into a throwaway folder."""
+    monkeypatch.setenv("LOOPBUILDER_HOME", str(tmp_path / "Loop Builder"))
+    api = TestClient(create_app(library=Library()))  # the app's own way: the folder LOOPBUILDER_HOME names
+    assert not api.get("/api/home").json()["offer_documents"]
+    assert api.post("/api/library/move-documents").status_code == 404

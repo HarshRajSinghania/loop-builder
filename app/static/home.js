@@ -101,7 +101,7 @@ $("#delete-go").addEventListener("click", async () => {
 async function savePackage(e) {
   const fileName = `${e.name}.loopevent`;
   if (native()) {
-    const path = await native().save_file(fileName, home.settings.export_dir || home.folder || "");
+    const path = await native().save_file(fileName, home.settings.export_dir || home.exports || "");
     if (!path) return;
     try { const { file } = await api(`/api/events/${encodeURIComponent(e.slug)}/package`, "POST", { path }); status(`Saved ${file.split(/[\\/]/).pop()}`, file); }
     catch (err) { status(`Not saved: ${err.message}`); }
@@ -116,7 +116,7 @@ async function imported(request) {
 }
 $("#import-pick").addEventListener("click", async () => { // a button, so Tab reaches it
   if (!native()) { $("#import-file").click(); return; } // browser tab: its own file picker
-  const path = await native().open_package(home.settings.export_dir || home.folder || ""); // the app: the system's, which can offer .loopevent files; it starts where Save does
+  const path = await native().open_package(home.settings.export_dir || home.exports || ""); // the app: the system's, which can offer .loopevent files; it starts where Save does
   if (path) await imported(() => api("/api/events/import-file", "POST", { path }));
 });
 $("#import-file").addEventListener("change", async (ev) => {

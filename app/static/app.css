@@ -75,6 +75,12 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
 .strip ol.drop-end{outline:2px dashed var(--blue);outline-offset:4px;border-radius:10px}
 .drop-zone{border:2px dashed var(--ctl-line);border-radius:10px;padding:16px;text-align:center;font-size:13px;color:var(--muted);list-style:none}
 .btn.icon{width:36px;padding:0}
+/* A tooltip drawn by the page, not the web view: the Mac app window showed none for these buttons (round 4), and a
+   disabled button gets no native tooltip anywhere. Shown on hover, also while disabled, and on keyboard focus. */
+.btn[data-tip]{position:relative}
+/* dimmed by colour, not opacity, which would fade its tooltip too */
+.btn[data-tip]:disabled{opacity:1;color:rgba(236,238,240,.35);background:rgba(35,39,44,.45);border-color:rgba(54,59,66,.45)}
+.btn[data-tip]:hover::after,.btn[data-tip]:focus-visible::after{content:attr(data-tip);position:absolute;top:calc(100% + 6px);left:50%;transform:translateX(-50%);z-index:20;padding:4px 8px;border:1px solid var(--line);border-radius:4px;background:var(--panel);color:var(--soft);font-size:12px;font-weight:400;white-space:nowrap;pointer-events:none}
 .btn:disabled{opacity:.45;cursor:default}
 .editor{display:flex;flex-direction:column;gap:16px}
 .group{border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
