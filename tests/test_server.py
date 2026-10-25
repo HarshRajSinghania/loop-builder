@@ -437,7 +437,8 @@ def test_settings_can_count_a_folders_templates_as_it_is_typed(client, tmp_path)
 
 def test_a_template_folder_written_with_a_tilde_is_found_everywhere(client, tmp_path, monkeypatch):
     api, _ = client
-    monkeypatch.setenv("HOME", str(tmp_path))  # ~ is tmp_path here
+    monkeypatch.setenv("HOME", str(tmp_path))  # ~ is tmp_path here: HOME on a Mac, USERPROFILE on Windows
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
     (tmp_path / "Boards").mkdir()
     (tmp_path / "Boards" / "Welcome.tpl").write_bytes(b"enough for the folder check")
     assert api.put("/api/settings", json={"templates": "~/Boards"}).status_code == 200
