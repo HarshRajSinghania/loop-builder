@@ -419,3 +419,17 @@ def test_pictures_library_routes(client, tmp_path):
     assert api.delete(f"/api/library/pictures/{pic_id}").status_code == 200
     assert api.post(f"/api/library/pictures/{pic_id}/use").status_code == 422
     assert api.get(f"/api/library/pictures/{pic_id}/image").status_code == 404
+
+
+def test_settings_can_count_a_folders_templates_as_it_is_typed(client, tmp_path):
+    api, _ = client
+    (tmp_path / "tpl" / "sub").mkdir(parents=True)
+    for name in ("a.tpl", "sub/b.tpl", "notes.txt"):
+        (tmp_path / "tpl" / name).write_text("x")
+
+    def count(folder):
+        return api.get("/api/templates/count", params={"folder": folder}).json()
+
+    assert count(str(tmp_path / "tpl")) == {"found": True, "count": 2}
+    assert count(str(tmp_path / "missing")) == {"found": False, "count": 0}
+    assert count("") == {"found": False, "count": 0}
