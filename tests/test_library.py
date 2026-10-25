@@ -37,7 +37,11 @@ def test_package_round_trip_and_unsafe_packages(lib, tmp_path):
     slug = lib.create("Sections", "sections")
     package = lib.export_package(slug, tmp_path / "Sections")
     assert package.suffix == ".loopevent"
-    assert load_event(lib.event_file(lib.import_package(package))).name == "Sections"
+    imported = lib.import_package(package)  # "Sections" is still here, so the copy is told apart like its folder
+    assert imported == "Sections (2)" and load_event(lib.event_file(imported)).name == "Sections (2)"
+    lib.delete(slug)
+    lib.delete(imported)
+    assert load_event(lib.event_file(lib.import_package(package))).name == "Sections"  # on another computer
     bad = tmp_path / "bad.loopevent"
     with zipfile.ZipFile(bad, "w") as z:
         z.writestr("event.yaml", "event: x\nloops: []\n")

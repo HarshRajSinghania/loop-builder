@@ -387,6 +387,12 @@ class Library:
                 if n.startswith("/") or ".." in Path(n).parts or ":" in n:
                     raise LibraryError(f"unsafe path in package: {n}")
             data = yaml.safe_load(z.read("event.yaml")) or {}
-            folder = self._free_folder(str(data.get("event") or Path(package).stem))
+            name = str(data.get("event") or Path(package).stem)
+            folder = self._free_folder(name)
             z.extractall(folder)
+        clash = folder.name[len(_slug(name)) :]  # " (2)" when an event of that name is already here
+        if clash:  # so the home screen tells the two apart, as its folder does
+            path = folder / "event.yaml"
+            data["event"] = name + clash
+            path.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding="utf-8")
         return folder.name
