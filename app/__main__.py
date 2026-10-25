@@ -26,10 +26,12 @@ def free_port():
 
 
 class NativeDialogs:
-    """The system's own folder and save pickers, offered to the page as window.pywebview.api."""
+    """The system's own folder and save pickers, and fitting the window to the screen, offered to the page
+    as window.pywebview.api."""
 
     def __init__(self):
         self._window = None  # private: pywebview exposes every public attribute to the page
+        self._fitted = False
 
     def _dialog(self, kind, **kwargs):
         import webview  # pylint: disable=import-outside-toplevel
@@ -46,6 +48,45 @@ class NativeDialogs:
     def save_file(self, name, start=""):
         return self._dialog("SAVE", directory=start or "", save_filename=name)
 
+    def fit_screen(self, left, top, width, height):
+        """Given the usable screen area the page measured, fit and centre the window if it spills over (once
+        per run). The page knows that area; only the app knows where its window is (webviews misreport it)."""
+        if self._fitted:
+            return
+        self._fitted = True
+        win = self._window
+        if spills((win.x, win.y, win.width, win.height), (left, top, width, height)):
+            x, y, w, h = fit_to(left, top, width, height)
+            win.resize(w, h)
+            win.move(x, y)
+
+
+WINDOW = (1440, 960)
+MIN_WINDOW = (800, 500)
+SCREEN_SHARE = 0.92  # of the usable screen, so the window's edges and title bar stay on it
+
+
+def fit_to(left, top, width, height):
+    """The window's place [x, y, width, height] in a usable screen area: the usual size if it fits,
+    else as much of the area as SCREEN_SHARE allows, centred. Any units, as long as all are the same."""
+    w, h = min(WINDOW[0], int(width * SCREEN_SHARE)), min(WINDOW[1], int(height * SCREEN_SHARE))
+    return left + (width - w) // 2, top + (height - h) // 2, w, h
+
+
+def spills(window, area):
+    """Whether a window [x, y, width, height] goes past a screen area [left, top, width, height]."""
+    x, y, w, h = window
+    left, top, width, height = area
+    return x < left or y < top or x + w > left + width or y + h > top + height
+
+
+def first_size(screens):
+    """A first guess at the window's size from pywebview's screen list; the page corrects it once it can
+    measure the usable screen (see fitWindow in common.js)."""
+    if not screens:
+        return WINDOW
+    return fit_to(0, 0, screens[0].width, screens[0].height)[2:]
+
 
 def ensure_streams():
     """A windowed build (no console) starts with no stdout/stderr, and uvicorn's logging fails on that: send
@@ -58,16 +99,6 @@ def ensure_streams():
     sys.stdout = sys.stdout or stream
     sys.stderr = sys.stderr or stream
     return log
-
-
-def window_size(screens, size=(1440, 960), least=(1024, 700)):
-    """The window's size and minimum size, in logical pixels: the usual size where it fits, else the screen less
-    room for the taskbar or menu bar and dock, so the whole window shows on a small or scaled-up screen."""
-    if not screens:
-        return size, least
-    room = (screens[0].width - 64, screens[0].height - 120)
-    fit = tuple(min(want, have) for want, have in zip(size, room))
-    return fit, tuple(min(want, have) for want, have in zip(least, fit))
 
 
 def main():
@@ -99,17 +130,11 @@ def main():
     dialogs = NativeDialogs()
     try:
         screens = webview.screens
-    except Exception:  # pylint: disable=broad-except  # no screen list: open at the usual size
+    except Exception:  # pylint: disable=broad-except  # no screen list: the default size
         screens = []
-    (width, height), least = window_size(screens)
+    width, height = first_size(screens)
     dialogs._window = webview.create_window(  # pylint: disable=protected-access
-        "Loop Builder",
-        url,
-        width=width,
-        height=height,
-        min_size=least,
-        js_api=dialogs,
-        screen=screens[0] if screens else None,  # centred on it: Windows' own placement can run off the edge
+        "Loop Builder", url, width=width, height=height, min_size=MIN_WINDOW, js_api=dialogs
     )
     webview.start()
     server.should_exit = True

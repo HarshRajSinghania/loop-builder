@@ -1,11 +1,11 @@
-"""Starting without a console, as the packaged Windows app does."""
+"""Starting without a console, as the packaged Windows app does, in a window that fits the screen."""
 
 import sys
-from types import SimpleNamespace
+from types import SimpleNamespace as Screen
 
 import uvicorn
 
-from app.__main__ import ensure_streams, window_size
+from app.__main__ import WINDOW, ensure_streams, first_size, fit_to, spills
 
 
 def test_a_windowed_start_logs_to_a_file_instead_of_failing(tmp_path, monkeypatch):
@@ -25,22 +25,12 @@ def test_a_console_start_keeps_its_streams():
     assert ensure_streams() is None
 
 
-def screen(width, height):
-    return SimpleNamespace(width=width, height=height)
-
-
-def test_the_window_keeps_its_usual_size_on_a_big_screen():
-    assert window_size([screen(1920, 1080)]) == ((1440, 960), (1024, 700))
-
-
-def test_the_window_fits_a_screen_smaller_than_its_usual_size():
-    (width, height), least = window_size([screen(1512, 949)])  # 1440 x 960 ran off this one
-    assert (width, height) == (1440, 829) and least == (1024, 700)
-
-
-def test_the_minimum_size_gives_way_on_a_very_small_screen():
-    assert window_size([screen(1024, 768)]) == ((960, 648), (960, 648))
-
-
-def test_no_screen_list_opens_at_the_usual_size():
-    assert window_size([]) == ((1440, 960), (1024, 700))
+def test_the_window_fits_any_screen():
+    assert fit_to(0, 0, 2560, 1400) == (560, 220, *WINDOW)  # room for the usual size: centred
+    for area in [(0, 0, 1280, 672), (0, 40, 1366, 728), (-1920, 0, 1920, 1032), (0, 0, 3840, 2100)]:
+        x, y, w, h = fit_to(*area)
+        left, top, width, height = area
+        assert left <= x and x + w <= left + width and top <= y and y + h <= top + height  # on the screen
+    assert not spills((256, 141, 1000, 700), (0, 33, 1512, 892))
+    assert spills((0, 0, 1500, 1400), (0, 33, 1512, 892)) and spills((-10, 100, 800, 600), (0, 0, 1920, 1040))
+    assert first_size([Screen(width=1280, height=720)])[1] < 720 and first_size([]) == WINDOW

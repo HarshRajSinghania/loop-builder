@@ -32,6 +32,13 @@ const upload = async (url, file) => {
 
 // The app window offers the system's own pickers; a browser tab (developer use) falls back to typing a path.
 const native = () => (window.pywebview && window.pywebview.api) || null;
+// The app window must fit the screen: one taller than the screen hides the bottom of every page, and dialogs'
+// buttons with it. The page measures the usable screen (without the taskbar) in its own pixels, which are the
+// window's logical pixels whatever the resolution and display scaling; the app fits the window if it spills over.
+window.addEventListener("pywebviewready", () => {
+  const s = window.screen;
+  if (native() && native().fit_screen) native().fit_screen(s.availLeft ?? 0, s.availTop ?? 0, s.availWidth, s.availHeight);
+});
 async function pickFolder(input) {
   if (!native()) { input.focus(); return null; }
   const folder = await native().pick_folder(input.value || "");
