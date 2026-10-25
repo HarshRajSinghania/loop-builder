@@ -446,3 +446,16 @@ def test_settings_can_count_a_folders_templates_as_it_is_typed(client, tmp_path)
     assert count(str(tmp_path / "tpl")) == {"found": True, "count": 2}
     assert count(str(tmp_path / "missing")) == {"found": False, "count": 0}
     assert count("") == {"found": False, "count": 0}
+
+
+def test_a_template_folder_written_with_a_tilde_is_found_everywhere(client, tmp_path, monkeypatch):
+    api, _ = client
+    monkeypatch.setenv("HOME", str(tmp_path))  # ~ is tmp_path here: HOME on a Mac, USERPROFILE on Windows
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    (tmp_path / "Boards").mkdir()
+    (tmp_path / "Boards" / "Welcome.tpl").write_bytes(b"enough for the folder check")
+    assert api.put("/api/settings", json={"templates": "~/Boards"}).status_code == 200
+    home = api.get("/api/home").json()
+    assert home["settings"]["templates"] == str(tmp_path / "Boards")
+    assert home["templates_found"] and home["template_count"] == 1
+    assert api.get("/api/event").json()["templates_found"]
