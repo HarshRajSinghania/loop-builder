@@ -17,7 +17,6 @@ from app.library import Library
 from app.updates import check_for_update
 from app.version import RELEASES_URL, VERSION
 
-
 LOCAL_HOSTS = ("127.0.0.1", "localhost", "[::1]")  # the names this computer's own pages reach the app by
 SAFE_METHODS = ("GET", "HEAD", "OPTIONS")
 
@@ -51,6 +50,7 @@ def create_app(event_path=None, templates=None, library=None):
         if not from_this_app(request):
             return PlainTextResponse("Loop Builder only answers its own window.", status_code=403)
         return await call_next(request)
+
     if event_path:
         ctx.open_event(event_path)
     if RELEASES_URL:  # asked once, in the background, so the home page never waits on the network
