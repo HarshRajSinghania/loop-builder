@@ -120,12 +120,17 @@ def ensure_streams():
 
 def main():
     ensure_streams()
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        prog="python -m app",
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     ap.add_argument("event", nargs="?")
     ap.add_argument("--templates", help="DisplayLink Plus template folder (overrides the setting)")
-    ap.add_argument("--port", type=int, help=argparse.SUPPRESS)
-    ap.add_argument("--browser", action="store_true", help=argparse.SUPPRESS)
-    ap.add_argument("--no-open", action="store_true", help=argparse.SUPPRESS)
+    dev = ap.add_argument_group("developer options")
+    dev.add_argument("--port", type=int, help="port to serve on (default: any free one)")
+    dev.add_argument("--browser", action="store_true", help="open a browser tab instead of the app window")
+    dev.add_argument("--no-open", action="store_true", help="only serve; do not open a window or browser")
     args = ap.parse_args()
     port = args.port or free_port()
     url = f"http://127.0.0.1:{port}/" + ("edit" if args.event else "")
