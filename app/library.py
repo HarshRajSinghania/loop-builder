@@ -325,6 +325,7 @@ class Library:  # pylint: disable=too-many-public-methods  # the one way in to t
         name = " ".join(str(name).split())
         if not name:
             raise LibraryError("a picture needs a name")
+
         def make_id(n):
             return re.sub(r"[^a-z0-9]+", "-", n.lower()).strip("-") or "picture"
 

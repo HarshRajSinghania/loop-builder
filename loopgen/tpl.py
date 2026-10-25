@@ -102,6 +102,8 @@ KNOWN_COLORS = {27: "transparent", 35: "black", 108: "lime", 164: "white"}
 
 
 class Renderer:
+    """Draws a saved DisplayLink Plus layout as an approximate preview, noting what it couldn't draw exactly."""
+
     def __init__(self, reader, font_dir=None):
         self.reader = reader
         self.font_dir = font_dir
@@ -123,7 +125,7 @@ class Renderer:
         if name == "transparent" or state == 0:
             return (0, 0, 0, 0)
         if name is None:
-            raise FormatError("Unsupported System.Drawing.KnownColor: %s" % known)
+            raise FormatError(f"Unsupported System.Drawing.KnownColor: {known}")
         return ImageColor.getcolor(name, "RGBA")
 
     def bitmap(self, value):
@@ -156,9 +158,7 @@ class Renderer:
         if exact:
             selected = ImageFont.truetype(str(exact), height)
         else:
-            self.warnings.add(
-                "Font substituted: %s%s%s" % (name, " (bold)" if bold else "", " (italic)" if italic else "")
-            )
+            self.warnings.add(f"Font substituted: {name}{' (bold)' if bold else ''}{' (italic)' if italic else ''}")
             fallback = next((p for p in stand_ins(name, bold, italic) if p.is_file()), None)
             selected = ImageFont.truetype(str(fallback), height) if fallback else ImageFont.load_default(size=height)
         self.fonts[key] = selected
@@ -168,7 +168,7 @@ class Renderer:
         width = self.field(item, "width", 0)
         height = self.field(item, "height", 0) or self.field(item, "Height", 0)
         if not 0 <= width <= MAX_DIMENSION or not 0 <= height <= MAX_DIMENSION:
-            raise FormatError("Invalid item dimensions: %s x %s" % (width, height))
+            raise FormatError(f"Invalid item dimensions: {width} x {height}")
         return self.field(item, "Left", 0), self.field(item, "Top", 0), width, height
 
     def text(self, item, width, height):
@@ -194,7 +194,7 @@ class Renderer:
         rows = {1: 0, 2: 0, 4: 0, 16: 1, 32: 1, 64: 1, 256: 2, 512: 2, 1024: 2}
         columns = {1: 0, 2: 1, 4: 2, 16: 0, 32: 1, 64: 2, 256: 0, 512: 1, 1024: 2}
         if alignment not in rows:
-            raise FormatError("Unsupported ContentAlignment: %s" % alignment)
+            raise FormatError(f"Unsupported ContentAlignment: {alignment}")
         top = (height - block_height) * rows[alignment] // 2
         fill = self.color(self.field(item, "dimFontColor" if self.field(item, "fontDim") else "fontColor"))
         outline = self.color(self.field(item, "outlineColor"))
@@ -289,7 +289,7 @@ class Renderer:
                 elif kind == "ShapeTemplateItem":
                     shape = self.field(self.field(item, "shape"), "value__")
                     if shape != 0:
-                        raise FormatError("Unsupported TemplateShape: %s" % shape)
+                        raise FormatError(f"Unsupported TemplateShape: {shape}")
                     tile = Image.new("RGBA", (w, h), self.color(self.field(item, "BackgroundColor")))
                     thickness = max(1, round(self.field(item, "thickness", 1)))
                     ImageDraw.Draw(tile).rectangle(
@@ -298,10 +298,10 @@ class Renderer:
                         width=thickness,
                     )
                 else:
-                    raise FormatError("Unsupported template item: %s" % kind)
+                    raise FormatError(f"Unsupported template item: {kind}")
                 canvas.alpha_composite(tile, (left, top))
             elif kind not in ("TextTemplateItem", "DataTextTemplateItem", "GraphicTemplateItem", "ShapeTemplateItem"):
-                raise FormatError("Unsupported template item: %s" % kind)
+                raise FormatError(f"Unsupported template item: {kind}")
             metadata.append(info)
         return canvas, {
             "width": width,
@@ -353,10 +353,9 @@ def gallery(output, entries):
         metadata = html.escape(quote(entry["metadata"]), quote=True)
         warnings = "<br>".join(html.escape(w) for w in entry["warnings"])
         cards.append(
-            '<article><h2>%s</h2><a href="%s"><img src="%s" alt="%s"></a>'
-            '<p>%s x %s pixels &middot; <a href="%s">Layout JSON</a></p>'
-            "<details><summary>Preview limitations</summary>%s</details></article>"
-            % (label, image, image, label, entry["width"], entry["height"], metadata, warnings or "None recorded")
+            f'<article><h2>{label}</h2><a href="{image}"><img src="{image}" alt="{label}"></a>'
+            f'<p>{entry["width"]} x {entry["height"]} pixels &middot; <a href="{metadata}">Layout JSON</a></p>'
+            f"<details><summary>Preview limitations</summary>{warnings or 'None recorded'}</details></article>"
         )
     page = """<!doctype html>
 <html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width">
@@ -391,13 +390,12 @@ def main():
     font_dir = args.font_dir.expanduser().resolve() if args.font_dir else None
     if font_dir is not None and not font_dir.is_dir():
         parser.error("--font-dir must be an existing directory")
-    if source.is_file() and source.suffix.lower() == ".tpl":
-        files, base = [source], source.parent
-    elif source.is_dir():
+    if not (source.is_dir() or source.is_file() and source.suffix.lower() == ".tpl"):
+        parser.error("input must be an existing .tpl file or directory")  # exits
+    if source.is_dir():
         files, base = sorted(p for p in source.rglob("*") if p.is_file() and p.suffix.lower() == ".tpl"), source
     else:
-        parser.error("input must be an existing .tpl file or directory")  # exits
-        return
+        files, base = [source], source.parent
     if not files:
         parser.error("No .tpl files found")
     output.mkdir(parents=True, exist_ok=True)
@@ -427,7 +425,7 @@ def main():
             )
         except (FormatError, OSError, ValueError, KeyError, TypeError, RecursionError) as exc:
             failures.append({"source": str(path), "error": str(exc)})
-            print("ERROR: %s: %s" % (path, exc), file=sys.stderr)
+            print(f"ERROR: {path}: {exc}", file=sys.stderr)
     gallery(output, entries)
     (output / "manifest.json").write_text(
         json.dumps(
@@ -442,7 +440,7 @@ def main():
         + "\n",
         encoding="utf-8",
     )
-    print("Rendered %s/%s templates. Gallery: %s" % (len(entries), len(files), output / "index.html"))
+    print(f"Rendered {len(entries)}/{len(files)} templates. Gallery: {output / 'index.html'}")
     substitutions = sorted({w for e in entries for w in e["warnings"]})
     for warning in substitutions:
         print("WARNING: " + warning, file=sys.stderr)
