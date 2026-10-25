@@ -924,6 +924,7 @@ async function loadChecks() {
 // ---------- export ----------
 
 $("#open-export").addEventListener("click", () => {
+  if ($("#run-export").disabled) { $("#export").showModal(); return; } // still exporting: show it as it was
   $("#export-loops").replaceChildren(...state.event.loops.map((lp, i) => el("label", { class: "job" },
     el("input", { type: "checkbox", checked: true, value: i, "aria-label": `Export ${lp.name}` }),
     el("span", {}, lp.name, " ", el("span", { class: "mono" }, `· ${clock(lp.length)}`)),
@@ -972,11 +973,17 @@ async function stepHistory(which) {
 }
 $("#undo").addEventListener("click", () => stepHistory("undo"));
 $("#redo").addEventListener("click", () => stepHistory("redo"));
+// The shortcuts as each system names them: Cmd on a Mac; Windows also redoes with Ctrl+Y.
+const MAC = /Mac|iPhone|iPad/.test(navigator.platform);
+[["#undo", MAC ? "Undo (⌘Z)" : "Undo (Ctrl+Z)"], ["#redo", MAC ? "Redo (⇧⌘Z)" : "Redo (Ctrl+Y)"]].forEach(([sel, tip]) => {
+  $(sel).title = tip; $(sel).setAttribute("aria-label", tip);
+});
 document.addEventListener("keydown", (e) => {
-  if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "z") return;
+  const key = e.key.toLowerCase(), ctrlY = !MAC && e.ctrlKey && !e.shiftKey && key === "y";
+  if (!((e.ctrlKey || e.metaKey) && key === "z") && !ctrlY) return;
   if (e.target.matches("input, textarea, select")) return; // let fields undo their own typing
   e.preventDefault();
-  stepHistory(e.shiftKey ? "redo" : "undo");
+  stepHistory(e.shiftKey || ctrlY ? "redo" : "undo");
 });
 
 // This event's theme: its colours, or the team theme again ("Use team theme"), which lives in Settings.

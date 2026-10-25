@@ -8,7 +8,8 @@ Loop Builder ships as a folder app built by PyInstaller, wrapped for each platfo
 | Windows | `LoopBuilder-Setup-<version>.exe` (per-user, no administrator rights) | `packaging/windows/loopbuilder.iss` (Inno Setup 6) |
 | Windows | `Loop Builder-<version>-portable.zip` (runs from any folder or USB stick) | `packaging/windows/make_portable.ps1` |
 
-The version lives in `packaging/version.py`. A release is a git tag `v<version>` that matches it.
+The version is set in `app/version.py`; `packaging/version.py` reads it for the build scripts. A release is a git tag
+`v<version>` that matches it.
 
 ## Build locally
 
