@@ -259,7 +259,6 @@ class Renderer:
             cx, inner = x0 + cw / 2, cw - 4
             lf, _ = draw.fit(self.family, "bold", f"{label} {num}".strip(), size, inner)
             draw.text_centred(d, cx, y0, f"{label} {num}".strip(), lf, label_fill)
-            logo_top = y0 + draw.line_height(lf) + 1
             names = [s.strip() for s in str(lane.get("name", "")).replace("|", "\n").split("\n") if s.strip()][:2]
             smallest_ok = max(draw.MIN_SIZE, round(size * 0.75))  # shrink a little before breaking a name in two
             if (
@@ -276,20 +275,22 @@ class Renderer:
                 if too_long:
                     self.warn(f"lane {num}: team name too long for its cell: {name!r}")
                 fonts.append(f)
-            names_top = y0 + ch - sum(draw.line_height(f) for f in fonts) - 3
+            # The team's name sits right under its own lane's label, so on two rows it can't be read as the
+            # next row's lane; the logo fills the rest of the cell below it.
+            y = y0 + draw.line_height(lf) + 1
+            for name, f in zip(names, fonts):
+                draw.text_centred(d, cx, y, name, f, self.event.color("text"))
+                y += draw.line_height(f)
             if lane.get("logo"):
-                box_w, box_h = round(inner), round(names_top - logo_top - 2)
+                logo_top = y + 1
+                box_w, box_h = round(inner), round(y0 + ch - 3 - logo_top)
                 if box_w > 4 and box_h > 4:
                     pic = ImageOps.contain(
                         self.open_image(lane["logo"], f"lane {num} logo").convert("RGBA"),
                         (box_w, box_h),
                         Image.Resampling.LANCZOS,
                     )
-                    img.paste(pic, (round(cx - pic.width / 2), round(logo_top + (box_h - pic.height) / 2) + 1), pic)
-            y = names_top
-            for name, f in zip(names, fonts):
-                draw.text_centred(d, cx, y, name, f, self.event.color("text"))
-                y += draw.line_height(f)
+                    img.paste(pic, (round(cx - pic.width / 2), round(logo_top + (box_h - pic.height) / 2)), pic)
         return img
 
     def _board(self, p, frames):

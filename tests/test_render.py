@@ -245,6 +245,30 @@ def test_lanes_slide_draws_every_lane_and_flags_a_missing_logo(tmp_path):
     assert [e.slide for e in errors] == [2] and "logo" in errors[0].message
 
 
+def test_a_team_name_sits_under_its_own_lane_label(tmp_path):
+    """On two rows, a name at the bottom of its cell reads as the lane below it; it belongs under its own label."""
+    event_file = tmp_path / "lanes.yaml"
+    event_file.write_text(
+        "event: L\ntheme: {text: '#FFFFFF', accent: '#00FF00', primary: '#FF0000', background: '#000000'}\n"
+        "loops:\n  - name: L\n    slides:\n"
+        "      - lanes: {title: Welcome!, first: 1, last: 8, lanes: [{name: HASTINGS}]}\n",
+        encoding="utf-8",
+    )
+    event = load_event(event_file)
+    img = render_slide(event, event.loops[0], 0).convert("RGB")
+    cell = img.crop((0, 0, img.width // 4, img.height))  # lane 1's column, with lane 5 below it
+    pixels = list(cell.getdata())
+
+    def rows(test):
+        return sorted({i // cell.width for i, colour in enumerate(pixels) if test(colour)})
+
+    green = rows(lambda c: c[1] > 200 and c[0] < 80 and c[2] < 80)  # the LANE 1 and LANE 5 labels
+    white = rows(lambda c: min(c) > 220)  # the team name, and the title above the labels
+    lane5 = next(y for a, y in zip(green, green[1:]) if y - a > 10)  # where the second label band starts
+    name = [y for y in white if green[0] <= y < lane5]
+    assert name and name[-1] - green[0] < (lane5 - green[0]) / 2  # in the top half of lane 1's cell
+
+
 def test_lanes_split_into_pages_and_loops_with_a_countdown_end_cleanly(tmp_path):
     event_file = tmp_path / "pages.yaml"
     event_file.write_text(
