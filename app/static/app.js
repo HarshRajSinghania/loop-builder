@@ -1158,9 +1158,8 @@ $("#open-export").addEventListener("click", () => {
     el("input", { type: "checkbox", checked: true, value: i, "aria-label": `Export ${lp.name}` }),
     el("span", {}, lp.name, " ", el("span", { class: "mono" }, `· ${clock(lp.length)}`)),
     el("span", { class: "muted", id: `job-${i}` }, ""))));
-  api("/api/home").then((h) => { // the last folder used, else an Exports folder in the Loop Builder folder
-    const sep = h.folder.includes("\\") ? "\\" : "/";
-    if (!$("#out-dir").value) $("#out-dir").value = h.settings.export_dir || `${h.folder}${sep}Exports`;
+  api("/api/home").then((h) => { // the last folder used, else the app's default (Movies › Loop Builder on a Mac)
+    if (!$("#out-dir").value) $("#out-dir").value = h.settings.export_dir || h.exports;
   });
   $("#show-export").hidden = true;
   $("#export-status").textContent = "";

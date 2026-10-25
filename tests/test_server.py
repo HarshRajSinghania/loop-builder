@@ -433,3 +433,33 @@ def test_settings_can_count_a_folders_templates_as_it_is_typed(client, tmp_path)
     assert count(str(tmp_path / "tpl")) == {"found": True, "count": 2}
     assert count(str(tmp_path / "missing")) == {"found": False, "count": 0}
     assert count("") == {"found": False, "count": 0}
+
+
+def test_offer_and_bring_over_the_documents_folder(tmp_path, monkeypatch):
+    from app import server  # pylint: disable=import-outside-toplevel
+
+    lib = Library(tmp_path / "Application Support" / "Loop Builder")
+    old = Library(tmp_path / "Documents" / "Loop Builder")
+    old.create("Sections", "sections")
+    monkeypatch.setattr(server, "default_root", lambda: lib.root)  # as on a Mac
+    monkeypatch.setattr(server, "documents_root", lambda: old.root)
+    api = TestClient(create_app(library=lib))
+    assert api.get("/api/home").json()["offer_documents"]
+    assert api.post("/api/library/move-documents").json() == {"moved": 1}
+    home = api.get("/api/home").json()
+    assert [e["slug"] for e in home["events"]] == ["Sections"] and not home["offer_documents"]
+
+
+def test_no_documents_folder_or_no_thanks_stops_the_offer(tmp_path, monkeypatch):
+    from app import server  # pylint: disable=import-outside-toplevel
+
+    lib = Library(tmp_path / "Application Support" / "Loop Builder")
+    monkeypatch.setattr(server, "default_root", lambda: lib.root)
+    monkeypatch.setattr(server, "documents_root", lambda: tmp_path / "Documents" / "Loop Builder")
+    api = TestClient(create_app(library=lib))
+    assert api.post("/api/library/move-documents").status_code == 404
+    assert not api.get("/api/home").json()["offer_documents"]
+    lib.update_settings(documents_checked=False)
+    assert api.post("/api/library/documents-checked").json() == {"ok": True}
+    assert not api.get("/api/home").json()["offer_documents"]
+    assert api.get("/api/home").json()["exports"] == str(server.default_exports(lib.root))

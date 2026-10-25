@@ -13,4 +13,5 @@ labels: bug
 **Loop Builder version and computer** (Settings › About Loop Builder…; Windows or Mac and which version)
 
 **Screenshot or log** (if the app shows an error, attach a screenshot. On a crash, attach
-`Documents/Loop Builder/loop-builder.log`.) Please leave out anything private, such as swimmers' names.
+`loop-builder.log` from the Loop Builder folder: Documents › Loop Builder on Windows, or on a Mac
+`~/Library/Application Support/Loop Builder`, which the events page's Show in Finder button opens.) Please leave out anything private, such as swimmers' names.

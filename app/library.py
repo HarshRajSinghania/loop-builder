@@ -1,10 +1,12 @@
 """The Loop Builder folder on this computer: settings, the team's logo and one folder per event.
 
-    Documents/Loop Builder/settings.json
-    Documents/Loop Builder/Team/logo.png
-    Documents/Loop Builder/Events/<event>/event.yaml (+ assets/)
+    <Loop Builder folder>/settings.json
+    <Loop Builder folder>/Team/logo.png
+    <Loop Builder folder>/Events/<event>/event.yaml (+ assets/)
 
-Set LOOPBUILDER_HOME to use another folder (tests do)."""
+The folder is Documents › Loop Builder on Windows, and Library › Application Support › Loop Builder on a Mac,
+where macOS asks before an app may use Documents (0.1.6 and earlier kept it in Documents there too; see
+move_from). Set LOOPBUILDER_HOME to use another folder (tests do)."""
 
 import copy
 import hashlib
@@ -12,6 +14,7 @@ import json
 import os
 import re
 import shutil
+import sys
 import zipfile
 from datetime import date
 from pathlib import Path
@@ -33,6 +36,7 @@ DEFAULT_SETTINGS = {
     "theme": {},
     "pool_lanes": 8,  # lanes in the team's pool: new lane slides start with this many
     "first_lane": 1,  # 1, or 0 for pools numbered from lane 0
+    "documents_checked": False,  # Mac: offered (or done) bringing events over from Documents › Loop Builder
 }
 
 _WELCOME = {
@@ -150,10 +154,27 @@ class LibraryError(ValueError):
     """Something about the Loop Builder folder or an event package isn't right."""
 
 
+def documents_root():
+    """Documents › Loop Builder: the Loop Builder folder on Windows, and on a Mac up to 0.1.6."""
+    return Path.home() / "Documents" / "Loop Builder"
+
+
 def default_root():
+    """The Loop Builder folder. On a Mac it's in Application Support, which needs no permission: an app that
+    reaches into Documents, Desktop or Downloads by itself makes macOS ask the person first."""
     if os.environ.get("LOOPBUILDER_HOME"):
         return Path(os.environ["LOOPBUILDER_HOME"]).expanduser()
-    return Path.home() / "Documents" / "Loop Builder"
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "Loop Builder"
+    return documents_root()
+
+
+def default_exports(root):
+    """Where exports go until a folder is picked: somewhere easy to find in Finder or Explorer. On a Mac that's
+    Movies › Loop Builder (macOS doesn't ask about Movies), elsewhere an Exports folder in the Loop Builder folder."""
+    if sys.platform == "darwin" and not os.environ.get("LOOPBUILDER_HOME"):
+        return Path.home() / "Movies" / "Loop Builder"
+    return Path(root) / "Exports"
 
 
 VISITOR_PLACEHOLDER = "VISITING TEAM"  # what the Dual meet starter's cards say until a visiting team is chosen
@@ -202,6 +223,31 @@ class Library:  # pylint: disable=too-many-public-methods  # the one way in to t
         self.team_dir = self.root / "Team"
         self.events_dir.mkdir(parents=True, exist_ok=True)
         self.team_dir.mkdir(parents=True, exist_ok=True)
+
+    # --- bringing an older Loop Builder folder over (a Mac's Documents › Loop Builder, up to 0.1.6) ---
+
+    def move_from(self, old):
+        """Move an older Loop Builder folder's events, team logos and settings into this one. Events keep their
+        names, told apart like duplicates if one is already here; settings and the team logo come over only if
+        this folder has none yet. What's left of the old folder (its log, say) stays. Returns events moved."""
+        old = Path(old)
+        if not (old / "Events").is_dir() or old.resolve() == self.root.resolve():
+            raise LibraryError(f"no Loop Builder folder at {old}")
+        moved = 0
+        for folder in sorted(p for p in (old / "Events").iterdir() if p.is_dir() and (p / "event.yaml").exists()):
+            shutil.move(str(folder), str(self._free_folder(folder.name)))
+            moved += 1
+        if not self.settings_path.exists() and (old / "settings.json").exists():
+            shutil.move(str(old / "settings.json"), str(self.settings_path))
+        if (old / "Team").is_dir():
+            for item in (old / "Team").iterdir():
+                if not (self.team_dir / item.name).exists():
+                    shutil.move(str(item), str(self.team_dir / item.name))
+        for empty in (old / "Events", old / "Team"):
+            if empty.is_dir() and not any(empty.iterdir()):
+                empty.rmdir()
+        self.update_settings(documents_checked=True)
+        return moved
 
     # --- settings ---
 
@@ -325,6 +371,7 @@ class Library:  # pylint: disable=too-many-public-methods  # the one way in to t
         name = " ".join(str(name).split())
         if not name:
             raise LibraryError("a picture needs a name")
+
         def make_id(n):
             return re.sub(r"[^a-z0-9]+", "-", n.lower()).strip("-") or "picture"
 

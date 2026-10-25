@@ -143,3 +143,39 @@ def test_pictures_are_kept_for_every_event_and_copied_into_one_on_use(lib, tmp_p
         lib.add_picture("  ", tmp_path / "duck.jpg")
     with pytest.raises(LibraryError):
         lib.use_picture("gone", folder)
+
+
+def test_the_loop_builder_folder_is_in_application_support_on_a_mac(tmp_path, monkeypatch):
+    from app import library  # pylint: disable=import-outside-toplevel
+
+    monkeypatch.delenv("LOOPBUILDER_HOME", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))  # Path.home() on Windows
+    monkeypatch.setattr(library.sys, "platform", "darwin")
+    assert library.default_root() == tmp_path / "Library" / "Application Support" / "Loop Builder"
+    assert library.default_exports(library.default_root()) == tmp_path / "Movies" / "Loop Builder"
+    monkeypatch.setattr(library.sys, "platform", "win32")
+    assert library.default_root() == library.documents_root() == tmp_path / "Documents" / "Loop Builder"
+    assert library.default_exports(library.default_root()) == tmp_path / "Documents" / "Loop Builder" / "Exports"
+    monkeypatch.setenv("LOOPBUILDER_HOME", str(tmp_path / "elsewhere"))
+    assert library.default_root() == tmp_path / "elsewhere"
+
+
+def test_move_from_brings_an_older_folder_over(tmp_path):
+    old = Library(tmp_path / "Documents")
+    kept = old.create("Sections", "sections")
+    old.create("Dual", "dual-meet")
+    old.update_settings(team="Lakeview", pool_lanes=6)
+    (old.team_dir / "logo.png").write_bytes(b"png")
+    (old.root / "loop-builder.log").write_text("log")
+    new = Library(tmp_path / "Application Support")
+    here = new.create("Sections", "blank")  # already here: the moved one is told apart
+    assert new.move_from(old.root) == 2
+    names = sorted(e["slug"] for e in new.events())
+    assert names == sorted([here, f"{kept} (2)", "Dual"])
+    settings = new.settings()
+    assert settings["team"] == "Lakeview" and settings["pool_lanes"] == 6 and settings["documents_checked"]
+    assert (new.team_dir / "logo.png").read_bytes() == b"png"
+    assert not (old.root / "Events").exists() and (old.root / "loop-builder.log").exists()  # the rest stays
+    with pytest.raises(LibraryError):
+        new.move_from(old.root)  # nothing left to bring over

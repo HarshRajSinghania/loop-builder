@@ -32,7 +32,16 @@ from loopgen.loops import build_clips, loop_length, render_slide
 from loopgen.slides import MissingAsset, Renderer
 from loopgen.uploads import UploadError, prepare_upload
 
-from app.library import LOOK_COLOURS, STARTERS, Library, LibraryError, apply_visitor
+from app.library import (
+    LOOK_COLOURS,
+    STARTERS,
+    Library,
+    LibraryError,
+    apply_visitor,
+    default_exports,
+    default_root,
+    documents_root,
+)
 from app.updates import check_for_update
 from app.version import COPYRIGHT, PROJECT_URL, RELEASES_URL, VERSION
 
@@ -323,6 +332,11 @@ def create_app(event_path=None, templates=None, library=None):
             "starters": [{"id": k, "title": v["title"], "about": v["about"]} for k, v in STARTERS.items()],
             "open": current.session.path.parent.name if current.session else None,
             "folder": str(lib.root),
+            "exports": str(default_exports(lib.root)),
+            # a Mac with the folder in Application Support: offer the Documents › Loop Builder of 0.1.6 and earlier
+            "offer_documents": lib.root == default_root()
+            and lib.root != documents_root()
+            and not lib.settings().get("documents_checked"),
             "version": VERSION,
             "update": update or None,
         }
@@ -336,6 +350,25 @@ def create_app(event_path=None, templates=None, library=None):
             "update_check": bool(RELEASES_URL),
             "notices": legal_text("THIRD_PARTY_NOTICES.md"),
         }
+
+    @app.post("/api/library/move-documents")
+    def move_documents():
+        """Bring the events, team logos and settings of 0.1.6 and earlier over from Documents › Loop Builder.
+        Only when asked: looking in Documents is what makes macOS ask for permission."""
+        old = documents_root()
+        if not (old / "Events").is_dir():
+            lib.update_settings(documents_checked=True)
+            raise HTTPException(404, f"There's no Loop Builder folder in Documents ({old}).")
+        try:
+            return {"moved": lib.move_from(old)}
+        except (LibraryError, OSError) as exc:
+            raise HTTPException(422, f"couldn't move the events: {exc}") from exc
+
+    @app.post("/api/library/documents-checked")
+    def documents_checked():
+        """No events to bring over from Documents: stop offering."""
+        lib.update_settings(documents_checked=True)
+        return {"ok": True}
 
     @app.put("/api/settings")
     def save_settings(body: SettingsBody):
