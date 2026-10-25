@@ -3,8 +3,6 @@ extension-pkg-allow-list=zxingcpp,av,PIL
 
 [FORMAT]
 max-line-length=120
-# app/server.py holds every route of the editor's local API in one place; splitting it is a job of its own
-max-module-lines=1200
 
 [MESSAGES CONTROL]
 disable=missing-function-docstring,too-many-locals,too-many-arguments,too-many-positional-arguments,too-many-statements,

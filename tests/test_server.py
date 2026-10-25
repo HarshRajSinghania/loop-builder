@@ -178,7 +178,7 @@ def test_a_second_export_waits_for_the_first(client, tmp_path, monkeypatch):
         release.wait(10)  # the first export is still writing its files
         return []
 
-    monkeypatch.setattr("app.server.export_loop", slow_export)
+    monkeypatch.setattr("app.api.export.export_loop", slow_export)  # where export looks it up
     body = {"loops": [2], "out_dir": str(tmp_path / "out"), "formats": ["wmv"]}
     first = api.post("/api/export", json=body).json()
     second = api.post("/api/export", json=body)
