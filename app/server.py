@@ -191,6 +191,13 @@ class SettingsBody(BaseModel):
     theme: dict | None = None  # the team theme: colours only (the logo has its own upload)
 
 
+class SavePictureBody(BaseModel):
+    """A picture already in the open event, to keep in Pictures under a name."""
+
+    path: str
+    name: str
+
+
 class NewEventBody(BaseModel):
     """A new event from a starter, or a copy of an existing one."""
 
@@ -395,6 +402,53 @@ def create_app(event_path=None, templates=None, library=None):
     def use_team(team_id: str):
         """Copy a team's logo into the open event, for a lane; returns the lane's name and logo path."""
         return library_call(lib.use_team, team_id, s.path.parent)
+
+    # Pictures kept for every event (badges, league logos, the duck). Not /api/pictures: that's an event upload.
+    @app.get("/api/library/pictures")
+    def list_pictures():
+        return lib.pictures()
+
+    @app.post("/api/library/pictures")
+    def save_picture(file: UploadFile, name: str = Form(...), trim: bool = Form(False)):
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / Path(file.filename or "picture").name
+            src.write_bytes(file.file.read())
+            try:
+                return {"id": lib.add_picture(name, src, trim)}
+            except (LibraryError, UploadError) as exc:
+                raise HTTPException(422, str(exc)) from exc
+
+    @app.post("/api/library/pictures/from-event")
+    def save_event_picture(body: SavePictureBody):
+        """Keep a picture the open event already has (e.g. its assets/duck.png) in Pictures."""
+        try:
+            picture_id = lib.add_picture(body.name, event_file_path(body.path), replace=False)
+            return {"id": picture_id, "name": next(p["name"] for p in lib.pictures() if p["id"] == picture_id)}
+        except (LibraryError, UploadError) as exc:
+            raise HTTPException(422, str(exc)) from exc
+
+    @app.put("/api/library/pictures/{picture_id}")
+    def rename_picture(picture_id: str, body: NewEventBody):
+        library_call(lib.rename_picture, picture_id, body.name)
+        return {"ok": True}
+
+    @app.delete("/api/library/pictures/{picture_id}")
+    def delete_picture(picture_id: str):
+        library_call(lib.delete_picture, picture_id)
+        return {"ok": True}
+
+    @app.get("/api/library/pictures/{picture_id}/image")
+    def picture_image(picture_id: str):
+        try:
+            path = lib.picture_path(picture_id)
+        except LibraryError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        return FileResponse(path, headers={"Cache-Control": "no-store"})
+
+    @app.post("/api/library/pictures/{picture_id}/use")
+    def use_picture(picture_id: str):
+        """Copy a saved picture into the open event; returns its path there for the slide."""
+        return library_call(lib.use_picture, picture_id, s.path.parent)
 
     @app.get("/api/team/logo")
     def team_logo_file():
@@ -881,14 +935,18 @@ def create_app(event_path=None, templates=None, library=None):
             s.renderer.issues = []
         return {"folder": str(folder), "found": True, "templates": names, "details": details}
 
-    @app.get("/api/asset")
-    def event_asset(path: str):
-        """A picture from the open event's folder (e.g. assets/poster.jpg), for the crop box."""
+    def event_file_path(path):
+        """A file inside the open event's folder, never outside it."""
         root = s.path.parent.resolve()
         target = (root / path).resolve()
         if root not in target.parents or not target.is_file():
             raise HTTPException(404, "no such picture in this event")
-        return FileResponse(target, headers={"Cache-Control": "no-store"})
+        return target
+
+    @app.get("/api/asset")
+    def event_asset(path: str):
+        """A picture from the open event's folder (e.g. assets/poster.jpg), for the crop box."""
+        return FileResponse(event_file_path(path), headers={"Cache-Control": "no-store"})
 
     @app.get("/api/template.png")
     def template_png(name: str):

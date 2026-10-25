@@ -17,9 +17,10 @@ from datetime import date
 from pathlib import Path
 
 import yaml
+from PIL import Image
 
 from loopgen.event import DEFAULT_THEME
-from loopgen.uploads import prepare_logo
+from loopgen.uploads import prepare_logo, prepare_picture
 
 LOOK_COLOURS = ("primary", "accent", "text", "muted", "background")  # the colours a look sets
 
@@ -292,6 +293,79 @@ class Library:  # pylint: disable=too-many-public-methods  # the one way in to t
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(self.team_logo_path(team), target)
         return {"name": team["name"], "logo": f"assets/teams/{team['logo']}"}
+
+    # --- Pictures: badges, league logos and other pictures kept for every event ---
+
+    @property
+    def pictures_dir(self):
+        return self.root / "Pictures"
+
+    def pictures(self):
+        """The saved pictures, by name; one whose file has gone is left out."""
+        try:
+            found = json.loads((self.pictures_dir / "pictures.json").read_text(encoding="utf-8"))
+        except (FileNotFoundError, json.JSONDecodeError):
+            found = []
+        return [pic for pic in found if (self.pictures_dir / pic["file"]).exists()]
+
+    def picture_path(self, picture_id):
+        pic = next((p for p in self.pictures() if p["id"] == picture_id), None)
+        if pic is None:
+            raise LibraryError(f"no picture {picture_id!r}")
+        return self.pictures_dir / pic["file"]
+
+    def _save_pictures(self, pictures):
+        self.pictures_dir.mkdir(parents=True, exist_ok=True)
+        pictures = sorted(pictures, key=lambda p: p["name"].lower())
+        (self.pictures_dir / "pictures.json").write_text(json.dumps(pictures, indent=2), encoding="utf-8")
+
+    def add_picture(self, name, picture, trim=False, replace=True):
+        """Add a picture kept for every event; returns its id. One of the same name is replaced, or with
+        replace=False the new one gets a free name ("duck 2")."""
+        name = " ".join(str(name).split())
+        if not name:
+            raise LibraryError("a picture needs a name")
+        def make_id(n):
+            return re.sub(r"[^a-z0-9]+", "-", n.lower()).strip("-") or "picture"
+
+        def same(n):  # a saved picture of this name (or whose id this name would take), renamed or not
+            return next((p for p in self.pictures() if p["name"].lower() == n.lower() or p["id"] == make_id(n)), None)
+
+        base, n = name, 1
+        while not replace and same(name):
+            n += 1
+            name = f"{base} {n}"
+        old = same(name)
+        picture_id = old["id"] if old else make_id(name)
+        keep = [p for p in self.pictures() if p["id"] != picture_id]
+        for old in self.pictures_dir.glob(f"{picture_id}.*"):  # a replaced PNG may come back as a JPEG
+            if old.suffix != ".json":
+                old.unlink()
+        stored = prepare_picture(picture, self.pictures_dir / picture_id, trim)
+        with Image.open(stored) as img:
+            size = list(img.size)
+        self._save_pictures(keep + [{"id": picture_id, "name": name, "file": stored.name, "size": size}])
+        return picture_id
+
+    def rename_picture(self, picture_id, name):
+        pictures = self.pictures()
+        for p in pictures:
+            if p["id"] == picture_id:
+                p["name"] = " ".join(str(name).split()) or p["name"]
+        self._save_pictures(pictures)
+
+    def delete_picture(self, picture_id):
+        path = self.picture_path(picture_id)
+        self._save_pictures([p for p in self.pictures() if p["id"] != picture_id])
+        path.unlink(missing_ok=True)
+
+    def use_picture(self, picture_id, event_folder):
+        """Copy a saved picture into an event (so the event and its package stand alone); returns its path there."""
+        source = self.picture_path(picture_id)
+        target = Path(event_folder) / "assets" / "pictures" / source.name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, target)
+        return {"file": f"assets/pictures/{source.name}"}
 
     def set_visitor(self, slug, team_id):
         """Make a team the visiting team of an event that isn't open (see apply_visitor); returns cards changed."""
