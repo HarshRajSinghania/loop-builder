@@ -257,7 +257,7 @@ def test_a_team_name_sits_under_its_own_lane_label(tmp_path):
     event = load_event(event_file)
     img = render_slide(event, event.loops[0], 0).convert("RGB")
     cell = img.crop((0, 0, img.width // 4, img.height))  # lane 1's column, with lane 5 below it
-    pixels = list(cell.getdata())
+    pixels = list(cell.get_flattened_data())  # Pillow 13+: getdata is going in Pillow 14
 
     def rows(test):
         return sorted({i // cell.width for i, colour in enumerate(pixels) if test(colour)})
