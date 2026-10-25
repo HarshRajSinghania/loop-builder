@@ -1,0 +1,26 @@
+# Weekly dependency updates. Minor and patch bumps arrive together in one PR per ecosystem;
+# major versions get a PR each, since they can change the app's behaviour or its bundled licences.
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: deps
+    groups:
+      python:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: ci
+    groups:
+      actions:
+        update-types: [minor, patch]

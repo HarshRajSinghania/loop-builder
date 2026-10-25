@@ -10,3 +10,5 @@ out/
 packaging/windows/MicrosoftEdgeWebview2Setup.exe
 *.dmg
 *.loopevent
+.DS_Store
+.pytest_cache/

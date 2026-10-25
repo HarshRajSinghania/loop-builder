@@ -396,7 +396,8 @@ def main():
     elif source.is_dir():
         files, base = sorted(p for p in source.rglob("*") if p.is_file() and p.suffix.lower() == ".tpl"), source
     else:
-        parser.error("input must be an existing .tpl file or directory")
+        parser.error("input must be an existing .tpl file or directory")  # exits
+        return
     if not files:
         parser.error("No .tpl files found")
     output.mkdir(parents=True, exist_ok=True)
