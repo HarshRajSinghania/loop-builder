@@ -310,15 +310,12 @@ def create_app(event_path=None, templates=None, library=None):
     @app.get("/api/home")
     def home():
         settings = lib.settings()
+        folder = count_templates(settings["templates"] or "")  # the check Settings makes as a folder is typed
         return {
             "settings": {k: settings[k] for k in ("team", "templates", "export_dir", "pool_lanes", "first_lane")}
             | {"logo": bool(settings["logo"]), "theme": lib.team_look()},
-            "templates_found": bool(settings["templates"]) and Path(settings["templates"]).is_dir(),
-            "template_count": (
-                sum(1 for _ in Path(settings["templates"]).rglob("*.tpl"))
-                if settings["templates"] and Path(settings["templates"]).is_dir()
-                else 0
-            ),
+            "templates_found": folder["found"],
+            "template_count": folder["count"],
             "events": lib.events(),
             "starters": [{"id": k, "title": v["title"], "about": v["about"]} for k, v in STARTERS.items()],
             "open": current.session.path.parent.name if current.session else None,

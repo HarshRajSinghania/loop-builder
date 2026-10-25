@@ -216,7 +216,10 @@ class Library:  # pylint: disable=too-many-public-methods  # the one way in to t
             saved = {}
         return {**DEFAULT_SETTINGS, **saved}
 
+    FOLDERS = ("templates", "export_dir")  # kept with ~ written out, so every reader finds the same folder
+
     def update_settings(self, **changes):
+        changes = {k: str(Path(v).expanduser()) if k in self.FOLDERS and v else v for k, v in changes.items()}
         settings = {**self.settings(), **{k: v for k, v in changes.items() if k in DEFAULT_SETTINGS}}
         self.settings_path.write_text(json.dumps(settings, indent=2), encoding="utf-8")
         return settings
