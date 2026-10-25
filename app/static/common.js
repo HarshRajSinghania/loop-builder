@@ -21,7 +21,7 @@ const failure = async (res) => {
   const data = isJson(res) ? await res.json().catch(() => null) : null;
   const detail = data && data.detail;
   if (Array.isArray(detail)) return detail.map((d) => d.msg || String(d)).join("; "); // a request FastAPI refused
-  return detail || `Something went wrong in Loop Builder (error ${res.status}). loop-builder.log in the Loop Builder folder says more.`;
+  return detail || `Something went wrong in Loop Builder (error ${res.status}). Details are in loop-builder.log in the Loop Builder folder, or in the terminal when started with --browser.`;
 };
 const api = async (url, method = "GET", body) => {
   const res = await fetch(url, { method, headers: body ? { "Content-Type": "application/json" } : {},
