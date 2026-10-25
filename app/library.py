@@ -237,9 +237,9 @@ class Library:  # pylint: disable=too-many-public-methods  # the one way in to t
 
     def move_from(self, old):
         """Move an older Loop Builder folder's events, team logos and settings into this one. Events keep their
-        names, "<name> (2)" if one here has it already; saved teams join the ones here; settings and the team logo
-        come over only if this folder has none yet. What's left of the old folder (its log, say) stays. Returns
-        events moved."""
+        names, "<name> (2)" if one here has it already; saved teams join the ones here; settings come over where
+        this folder still has the default, and the team logo only if there is none here yet. What's left of the
+        old folder (its log, say) stays. Returns events moved."""
         old = Path(old)
         if not (old / "Events").is_dir() or old.resolve() == self.root.resolve():
             raise LibraryError(f"no Loop Builder folder at {old}")
@@ -247,8 +247,8 @@ class Library:  # pylint: disable=too-many-public-methods  # the one way in to t
         for folder in sorted(p for p in (old / "Events").iterdir() if p.is_dir() and (p / "event.yaml").exists()):
             self._move_event(folder)
             moved += 1
-        if not self.settings_path.exists() and (old / "settings.json").exists():
-            shutil.move(str(old / "settings.json"), str(self.settings_path))
+        if (old / "settings.json").exists():
+            self._take_settings(old / "settings.json")
         if (old / "Team").is_dir():
             for item in (old / "Team").iterdir():
                 if item.name == "Teams" and item.is_dir():
@@ -260,6 +260,27 @@ class Library:  # pylint: disable=too-many-public-methods  # the one way in to t
                 empty.rmdir()
         self.update_settings(documents_checked=True)
         return moved
+
+    def _take_settings(self, path):
+        """Bring an older folder's settings over: the whole file when this folder has none yet, else only the
+        settings this folder still has at their defaults (a template folder picked here before the move stays).
+        The old file goes either way."""
+        if not self.settings_path.exists():
+            shutil.move(str(path), str(self.settings_path))
+            return
+        try:
+            theirs = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            theirs = {}
+        mine = self.settings()
+        take = {
+            k: v
+            for k, v in theirs.items()
+            if k in DEFAULT_SETTINGS and k != "documents_checked" and mine[k] == DEFAULT_SETTINGS[k] and v != mine[k]
+        }
+        if take:
+            self.update_settings(**take)
+        path.unlink()
 
     def _move_event(self, folder):
         """Move one event folder in, named "<name> (2)" when an event here already has its name, as imports are."""

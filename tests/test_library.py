@@ -301,3 +301,16 @@ def test_move_from_adds_saved_teams_and_tells_events_apart(tmp_path):
     assert sorted(t["name"] for t in new.teams()) == ["Lakeview", "Lakeview Otters", "Riverside"]
     assert (new.teams_dir / "lakeview.png").read_bytes() == b"new"  # the one here is untouched
     assert sorted(e["name"] for e in new.events()) == ["Meet", "Meet (2)"]
+
+
+def test_move_from_fills_in_settings_this_folder_still_has_at_their_defaults(tmp_path):
+    """The template folder is often picked before the events are brought over; that choice stays, the rest comes."""
+    old = Library(tmp_path / "Documents")
+    old.create("Sections", "sections")
+    old.update_settings(team="Lakeview", pool_lanes=6, templates=str(tmp_path / "old-boards"))
+    new = Library(tmp_path / "Application Support")
+    new.update_settings(templates=str(tmp_path), pool_lanes=10)  # chosen here first: kept
+    assert new.move_from(old.root) == 1
+    settings = new.settings()
+    assert settings["team"] == "Lakeview" and settings["pool_lanes"] == 10 and settings["templates"] == str(tmp_path)
+    assert settings["documents_checked"] and not (old.root / "settings.json").exists()
