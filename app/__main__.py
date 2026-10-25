@@ -46,6 +46,11 @@ class NativeDialogs:
     def save_file(self, name, start=""):
         return self._dialog("SAVE", directory=start or "", save_filename=name)
 
+    def open_package(self, start=""):
+        """A .loopevent to import. The page's own file input can't offer one on a Mac: the web view filters by
+        file type, and macOS knows no type for .loopevent, so it greys those files out."""
+        return self._dialog("OPEN", directory=start or "", file_types=("Loop Builder event (*.loopevent)",))
+
 
 def ensure_streams():
     """A windowed build (no console) starts with no stdout/stderr, and uvicorn's logging fails on that: send
